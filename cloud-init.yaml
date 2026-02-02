@@ -66,6 +66,7 @@ runcmd:
   - curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/main/install.sh -o /tmp/install.sh
   - chmod +x /tmp/install.sh
   - /tmp/install.sh
+  - rm -f /tmp/install.sh /tmp/.env
 
 power_state:
   delay: "+1"
