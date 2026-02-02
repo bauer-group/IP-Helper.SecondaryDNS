@@ -49,7 +49,6 @@ curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/
 
 | Datei | Beschreibung |
 |-------|--------------|
-| [KONZEPT.md](KONZEPT.md) | Vollständiges Lösungskonzept |
 | [install.sh](install.sh) | Haupt-Installationsscript |
 | [.env.example](.env.example) | Konfigurationsvorlage |
 | [cloud-init.yaml](cloud-init.yaml) | Cloud-Init für automatisches Deployment |
@@ -99,6 +98,9 @@ pdnsutil list-all-zones
 systemctl status pdns
 ```
 
-## Dokumentation
+## Hilfe
 
-Siehe [KONZEPT.md](KONZEPT.md) für das vollständige technische Konzept.
+```bash
+dns-status        # Vollständiger Server-Status
+dns-health-check  # Health-Check für Monitoring
+```

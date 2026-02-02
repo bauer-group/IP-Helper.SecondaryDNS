@@ -73,6 +73,10 @@ SSH_PASSWORD_AUTH="${SSH_PASSWORD_AUTH:-true}"
 AUTO_REBOOT="${AUTO_REBOOT:-true}"
 REBOOT_TIME="${REBOOT_TIME:-03:00}"
 
+# TSIG-Key für sichere Zone-Transfers (optional)
+# Format: name:algorithm:secret (z.B. "transfer-key:hmac-sha256:BASE64SECRET")
+TSIG_KEY="${TSIG_KEY:-}"
+
 # =============================================================================
 # Validierung
 # =============================================================================
@@ -148,6 +152,9 @@ show_config() {
     echo "  SSH Password Auth:    $SSH_PASSWORD_AUTH"
     echo "  Auto Reboot:          $AUTO_REBOOT"
     echo "  Reboot Time:          $REBOOT_TIME"
+    if [[ -n "$TSIG_KEY" ]]; then
+        echo "  TSIG-Key:             (konfiguriert)"
+    fi
     echo "============================================"
     echo ""
 }
@@ -169,11 +176,13 @@ prepare_system() {
     systemctl stop systemd-resolved 2>/dev/null || true
     systemctl disable systemd-resolved 2>/dev/null || true
 
-    # resolv.conf neu erstellen
+    # resolv.conf neu erstellen (Dual-Stack: IPv4 + IPv6)
     rm -f /etc/resolv.conf
     cat > /etc/resolv.conf << 'EOF'
 nameserver 9.9.9.9
+nameserver 2620:fe::fe
 nameserver 149.112.112.112
+nameserver 2620:fe::9
 EOF
 
     # Pakete aktualisieren
@@ -201,6 +210,43 @@ install_packages() {
         curl \
         dnsutils \
         htop
+}
+
+# =============================================================================
+# Chrony (NTP) konfigurieren
+# =============================================================================
+configure_chrony() {
+    log_step "Konfiguriere Chrony (NTP)..."
+
+    cat > /etc/chrony/chrony.conf << 'EOF'
+# Chrony Konfiguration für Secondary DNS Server
+
+# NTP Server Pools
+pool 0.pool.ntp.org iburst
+pool 1.pool.ntp.org iburst
+pool 2.pool.ntp.org iburst
+pool 3.pool.ntp.org iburst
+
+# Fallback: Lokale Zeit wenn keine Server erreichbar
+local stratum 10
+
+# Drift-Datei
+driftfile /var/lib/chrony/drift
+
+# RTC synchronisieren
+rtcsync
+
+# Große Zeitsprünge erlauben beim Start
+makestep 1.0 3
+
+# Logging
+logdir /var/log/chrony
+EOF
+
+    systemctl enable chrony
+    systemctl restart chrony
+
+    log_info "Chrony gestartet - Zeit wird synchronisiert"
 }
 
 # =============================================================================
@@ -311,6 +357,15 @@ EOFSCHEMA
             "INSERT OR IGNORE INTO supermasters (ip, nameserver, account) VALUES ('$ip', '$PRIMARY_DNS_HOSTNAME', 'primary');"
     done
 
+    # TSIG-Key einrichten falls konfiguriert
+    if [[ -n "$TSIG_KEY" ]]; then
+        log_info "Richte TSIG-Key ein..."
+        IFS=':' read -r TSIG_NAME TSIG_ALGO TSIG_SECRET <<< "$TSIG_KEY"
+        sqlite3 /var/lib/powerdns/pdns.sqlite3 \
+            "INSERT OR REPLACE INTO tsigkeys (name, algorithm, secret) VALUES ('$TSIG_NAME', '$TSIG_ALGO', '$TSIG_SECRET');"
+        log_info "TSIG-Key '$TSIG_NAME' mit Algorithmus '$TSIG_ALGO' eingerichtet"
+    fi
+
     # Berechtigungen setzen
     chown -R pdns:pdns /var/lib/powerdns
     chmod 640 /var/lib/powerdns/pdns.sqlite3
@@ -339,8 +394,8 @@ configure_powerdns() {
 setuid=pdns
 setgid=pdns
 
-# Netzwerk
-local-address=0.0.0.0
+# Netzwerk - IPv4 UND IPv6 auf allen Interfaces
+local-address=0.0.0.0,::
 local-port=53
 
 # Backend: SQLite3
@@ -395,6 +450,28 @@ EOF
 
     chown pdns:pdns /etc/powerdns/pdns.conf
     chmod 640 /etc/powerdns/pdns.conf
+}
+
+# =============================================================================
+# Log-Rotation konfigurieren
+# =============================================================================
+configure_log_rotation() {
+    log_step "Konfiguriere Log-Rotation..."
+
+    # Journald Limits setzen
+    mkdir -p /etc/systemd/journald.conf.d
+    cat > /etc/systemd/journald.conf.d/size-limit.conf << 'EOF'
+[Journal]
+# Maximale Größe für Logs
+SystemMaxUse=500M
+SystemKeepFree=1G
+SystemMaxFileSize=50M
+MaxRetentionSec=1month
+EOF
+
+    systemctl restart systemd-journald
+
+    log_info "Log-Rotation konfiguriert (max 500MB, 1 Monat)"
 }
 
 # =============================================================================
@@ -535,6 +612,131 @@ EOF
 }
 
 # =============================================================================
+# Status-Script erstellen
+# =============================================================================
+create_status_script() {
+    log_step "Erstelle Status-Script..."
+
+    cat > /usr/local/bin/dns-status << 'EOFSCRIPT'
+#!/bin/bash
+# DNS Server Status Script
+
+echo "============================================"
+echo "  Secondary DNS Server Status"
+echo "============================================"
+echo ""
+
+# PowerDNS Status
+echo "--- PowerDNS Service ---"
+systemctl is-active pdns >/dev/null 2>&1 && echo "Status: RUNNING" || echo "Status: STOPPED"
+echo ""
+
+# Zonen
+echo "--- Zonen ($(pdnsutil list-all-zones 2>/dev/null | wc -l)) ---"
+pdnsutil list-all-zones 2>/dev/null | head -10
+ZONE_COUNT=$(pdnsutil list-all-zones 2>/dev/null | wc -l)
+if [[ $ZONE_COUNT -gt 10 ]]; then
+    echo "... und $((ZONE_COUNT - 10)) weitere"
+fi
+echo ""
+
+# Supermaster
+echo "--- Supermaster (Primary DNS) ---"
+sqlite3 /var/lib/powerdns/pdns.sqlite3 "SELECT ip, nameserver FROM supermasters;" 2>/dev/null || echo "Keine Supermasters konfiguriert"
+echo ""
+
+# Netzwerk
+echo "--- Listening ---"
+ss -tulpn | grep pdns | head -5
+echo ""
+
+# Zeit
+echo "--- System Zeit ---"
+echo "Lokal:  $(date)"
+echo "Chrony: $(chronyc tracking 2>/dev/null | grep 'System time' || echo 'nicht verfügbar')"
+echo ""
+
+# Ressourcen
+echo "--- Ressourcen ---"
+echo "Disk:   $(df -h /var/lib/powerdns 2>/dev/null | tail -1 | awk '{print $3 " / " $2 " (" $5 " used)"}')"
+echo "Memory: $(free -h | grep Mem | awk '{print $3 " / " $2}')"
+echo ""
+
+echo "============================================"
+EOFSCRIPT
+
+    chmod +x /usr/local/bin/dns-status
+}
+
+# =============================================================================
+# Health-Check Script erstellen
+# =============================================================================
+create_health_check() {
+    log_step "Erstelle Health-Check Script..."
+
+    cat > /usr/local/bin/dns-health-check << 'EOFSCRIPT'
+#!/bin/bash
+# DNS Server Health Check
+# Exit codes: 0 = OK, 1 = WARNING, 2 = CRITICAL
+
+ERRORS=0
+WARNINGS=0
+
+# Prüfe PowerDNS Service
+if ! systemctl is-active pdns >/dev/null 2>&1; then
+    echo "CRITICAL: PowerDNS ist nicht aktiv"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Prüfe ob Port 53 offen ist
+if ! ss -tulpn | grep -q ':53 '; then
+    echo "CRITICAL: Port 53 nicht erreichbar"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Prüfe DNS-Antwort (localhost)
+if ! dig @127.0.0.1 +short +time=2 version.bind chaos txt >/dev/null 2>&1; then
+    echo "CRITICAL: DNS antwortet nicht auf localhost"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# Prüfe Chrony
+if ! systemctl is-active chrony >/dev/null 2>&1; then
+    echo "WARNING: Chrony ist nicht aktiv"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+# Prüfe Disk Space (warnung bei >90%)
+DISK_USAGE=$(df /var/lib/powerdns 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+if [[ -n "$DISK_USAGE" ]] && [[ $DISK_USAGE -gt 90 ]]; then
+    echo "WARNING: Disk usage bei ${DISK_USAGE}%"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+# Prüfe Zonenanzahl
+ZONE_COUNT=$(pdnsutil list-all-zones 2>/dev/null | wc -l)
+if [[ $ZONE_COUNT -eq 0 ]]; then
+    echo "WARNING: Keine Zonen vorhanden"
+    WARNINGS=$((WARNINGS + 1))
+fi
+
+# Ergebnis
+if [[ $ERRORS -gt 0 ]]; then
+    echo "HEALTH CHECK: CRITICAL ($ERRORS errors, $WARNINGS warnings)"
+    exit 2
+elif [[ $WARNINGS -gt 0 ]]; then
+    echo "HEALTH CHECK: WARNING ($WARNINGS warnings)"
+    exit 1
+else
+    echo "HEALTH CHECK: OK (${ZONE_COUNT} zones)"
+    exit 0
+fi
+EOFSCRIPT
+
+    chmod +x /usr/local/bin/dns-health-check
+}
+
+# =============================================================================
 # MOTD erstellen
 # =============================================================================
 create_motd() {
@@ -546,9 +748,11 @@ create_motd() {
 ============================================
 
 Befehle:
-  pdnsutil list-all-zones     - Alle Zonen
-  pdnsutil show-zone <zone>   - Zone Details
-  systemctl status pdns       - Server Status
+  dns-status              - Vollständiger Status
+  dns-health-check        - Health Check für Monitoring
+  pdnsutil list-all-zones - Alle Zonen
+  pdnsutil show-zone X    - Zone Details
+  systemctl status pdns   - Service Status
 
 ============================================
 
@@ -580,6 +784,10 @@ show_status() {
     systemctl status pdns --no-pager -l | head -5
     echo ""
 
+    echo "Listening on:"
+    ss -tulpn | grep pdns | head -5
+    echo ""
+
     echo "Firewall Status:"
     ufw status | head -10
     echo ""
@@ -593,7 +801,8 @@ show_status() {
     echo "   - NOTIFY aktivieren"
     echo ""
     echo "2. Testen:"
-    echo "   pdnsutil list-all-zones"
+    echo "   dns-status"
+    echo "   dns-health-check"
     echo ""
     echo "3. Zonen erscheinen automatisch nach NOTIFY vom Primary"
     echo ""
@@ -628,13 +837,17 @@ main() {
 
     prepare_system
     install_packages
+    configure_chrony
     setup_database
     configure_powerdns
+    configure_log_rotation
     configure_sysctl
     configure_firewall
     configure_fail2ban
     configure_updates
     configure_ssh
+    create_status_script
+    create_health_check
     create_motd
     start_services
     show_status

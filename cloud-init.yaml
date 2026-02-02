@@ -49,6 +49,13 @@ write_files:
       AUTO_REBOOT="true"
       REBOOT_TIME="03:00"
 
+      # =========================================================================
+      # OPTIONAL: TSIG-KEY (für sichere Zone-Transfers)
+      # =========================================================================
+
+      # Format: name:algorithm:secret (leer lassen wenn nicht benötigt)
+      TSIG_KEY=""
+
 # ###########################################################################
 #
 #                    AB HIER NICHTS ÄNDERN
