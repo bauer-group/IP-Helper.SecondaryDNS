@@ -420,13 +420,13 @@ dnssec=process-no-validate
 
 # Performance
 receiver-threads=2
-distributor-threads=3
 cache-ttl=60
 negquery-cache-ttl=60
 query-cache-ttl=20
 
 # Rate Limiting (Anti-DDoS)
-max-qps-per-ip=50
+# Hoher Wert wegen NAT (viele User hinter einer IP)
+max-qps-per-ip=1000
 max-ent-entries=100000
 
 # Logging (Production)
@@ -587,9 +587,15 @@ EOF
 configure_ssh() {
     log_step "Konfiguriere SSH..."
 
+    # Root-Login Einstellung basierend auf Password-Auth
+    local ROOT_LOGIN="prohibit-password"
+    if [[ "${SSH_PASSWORD_AUTH}" == "true" ]]; then
+        ROOT_LOGIN="yes"
+    fi
+
     cat > /etc/ssh/sshd_config.d/hardening.conf << EOF
 # SSH Hardening - Generiert am $(date)
-PermitRootLogin no
+PermitRootLogin ${ROOT_LOGIN}
 PasswordAuthentication ${SSH_PASSWORD_AUTH}
 PubkeyAuthentication yes
 X11Forwarding no
