@@ -357,6 +357,10 @@ configure_powerdns() {
     local ALLOWED_IPS
     ALLOWED_IPS=$(echo "$PRIMARY_DNS_IP" | tr ',' ',')
 
+    # CPU-Kerne für receiver-threads (1:1 Mapping)
+    local CPU_CORES
+    CPU_CORES=$(nproc)
+
     # Alte Konfiguration sichern
     [[ -f /etc/powerdns/pdns.conf ]] && cp /etc/powerdns/pdns.conf /etc/powerdns/pdns.conf.bak
 
@@ -391,8 +395,8 @@ allow-notify-from=127.0.0.1,::1,${ALLOWED_IPS}
 # DNSSEC
 dnssec=process-no-validate
 
-# Performance
-receiver-threads=2
+# Performance (receiver-threads = Anzahl CPU-Kerne)
+receiver-threads=${CPU_CORES}
 cache-ttl=60
 negquery-cache-ttl=60
 query-cache-ttl=20

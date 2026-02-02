@@ -98,6 +98,73 @@ pdnsutil list-all-zones
 systemctl status pdns
 ```
 
+## Befehle & Monitoring
+
+### Status & Übersicht
+
+```bash
+# Installierte Helper-Scripts
+dns-status                    # Vollständiger Server-Status
+dns-health-check              # Health-Check für Monitoring
+
+# PowerDNS Service
+systemctl status pdns         # Service-Status
+journalctl -u pdns -f         # Live-Logs
+```
+
+### Zonen-Verwaltung
+
+```bash
+# Zonen anzeigen
+pdnsutil list-all-zones                 # Alle Zonen auflisten
+pdnsutil show-zone example.com          # Zone-Details anzeigen
+pdnsutil list-zone example.com          # Alle Records einer Zone
+
+# Zone manuell abrufen (bei Problemen)
+pdnsutil retrieve-zone example.com      # Zone neu vom Primary holen
+```
+
+### Performance & Statistiken
+
+```bash
+# Live-Statistiken
+pdns_control show '*'                   # Alle Statistiken
+pdns_control show queries               # Anzahl Queries gesamt
+pdns_control show qsize-q               # Warteschlange
+pdns_control show packetcache-hit       # Cache-Treffer
+pdns_control show packetcache-miss      # Cache-Misses
+
+# Top-Statistiken
+pdns_control show uptime                # Laufzeit
+pdns_control show latency               # Durchschnittliche Latenz
+```
+
+### DNS-Tests
+
+```bash
+# Lokale Abfragen
+dig @localhost example.com A            # A-Record abfragen
+dig @localhost example.com ANY          # Alle Records
+dig @localhost example.com AXFR         # Zone-Transfer testen
+
+# Authoritative vs. Recursive Test
+dig @localhost google.com A             # Sollte REFUSED liefern (gut!)
+dig @localhost example.com A +short     # Nur IP-Adresse
+```
+
+### Troubleshooting
+
+```bash
+# Konfiguration prüfen
+pdns_control rping                      # PowerDNS erreichbar?
+pdnsutil check-all-zones                # Alle Zonen auf Fehler prüfen
+
+# Netzwerk
+ss -ulnp | grep :53                     # Port 53 UDP
+ss -tlnp | grep :53                     # Port 53 TCP
+ufw status                              # Firewall-Regeln
+```
+
 ## Hilfe
 
 ```bash
