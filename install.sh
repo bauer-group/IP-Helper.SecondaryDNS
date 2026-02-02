@@ -218,31 +218,7 @@ install_packages() {
 configure_chrony() {
     log_step "Konfiguriere Chrony (NTP)..."
 
-    cat > /etc/chrony/chrony.conf << 'EOF'
-# Chrony Konfiguration für Secondary DNS Server
-
-# NTP Server Pools
-pool 0.pool.ntp.org iburst
-pool 1.pool.ntp.org iburst
-pool 2.pool.ntp.org iburst
-pool 3.pool.ntp.org iburst
-
-# Fallback: Lokale Zeit wenn keine Server erreichbar
-local stratum 10
-
-# Drift-Datei
-driftfile /var/lib/chrony/drift
-
-# RTC synchronisieren
-rtcsync
-
-# Große Zeitsprünge erlauben beim Start
-makestep 1.0 3
-
-# Logging
-logdir /var/log/chrony
-EOF
-
+    # Standard-Konfiguration ist bereits gut, nur aktivieren
     systemctl enable chrony
     systemctl restart chrony
 
@@ -412,9 +388,6 @@ autosecondary=yes
 allow-axfr-ips=127.0.0.1,::1,${ALLOWED_IPS}
 allow-notify-from=127.0.0.1,::1,${ALLOWED_IPS}
 
-# KEINE Rekursion - unbekannte Zonen = REFUSED
-allow-recursion=
-
 # DNSSEC
 dnssec=process-no-validate
 
@@ -437,9 +410,6 @@ loglevel=4
 # API deaktiviert
 api=no
 webserver=no
-
-# AXFR erlauben (für Zone-Transfers)
-disable-axfr=no
 
 # Version verstecken
 version-string=anonymous

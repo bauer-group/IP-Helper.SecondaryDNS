@@ -104,3 +104,9 @@ systemctl status pdns
 dns-status        # Vollständiger Server-Status
 dns-health-check  # Health-Check für Monitoring
 ```
+
+## Optional: Web-Interface
+
+Für eine grafische Verwaltungsoberfläche kann [PowerDNS-Admin](https://github.com/PowerDNS-Admin/PowerDNS-Admin) separat installiert werden.
+
+> **Hinweis:** Für diesen Secondary DNS ist keine Weboberfläche erforderlich, da alle Zonen automatisch vom Primary synchronisiert werden.
