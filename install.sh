@@ -438,10 +438,7 @@ loglevel=4
 api=no
 webserver=no
 
-# Daemon
-daemon=yes
-guardian=yes
-write-pid=yes
+# AXFR erlauben (für Zone-Transfers)
 disable-axfr=no
 
 # Version verstecken
