@@ -197,6 +197,7 @@ install_packages() {
         unattended-upgrades \
         apt-listchanges \
         needrestart \
+        chrony \
         curl \
         dnsutils \
         htop
