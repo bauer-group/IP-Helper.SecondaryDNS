@@ -81,6 +81,7 @@ curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/
 
 - Ubuntu 24.04 LTS oder Debian 12
 - **Minimal:** 1 vCPU, 1 GB RAM, 10 GB SSD
+- **Empfohlen:** 2 vCPU, 2 GB RAM, 10 GB SSD
 - Offene Ports: 22 (SSH), 53 (DNS)
 
 ## Nach der Installation
