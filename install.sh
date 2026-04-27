@@ -410,9 +410,14 @@ EOFSCHEMA
 configure_powerdns() {
     log_step "Konfiguriere PowerDNS..."
 
-    # IP-Liste für AXFR/NOTIFY (alle Primary-IPs, Komma-separiert)
+    # IP-Liste aus supermasters-Tabelle lesen (Single Source of Truth).
+    # setup_database wurde direkt davor ausgefuehrt und hat die ENV-Primaries
+    # eingepflegt (INSERT OR IGNORE). Live-Aenderungen via 'dns-admin primary
+    # add/remove' bleiben damit auch nach einem install.sh Re-Run erhalten -
+    # die DB ist die authoritative Quelle, nicht die ENV-Vars.
     local ALLOWED_IPS
-    ALLOWED_IPS=$(IFS=','; echo "${PRIMARY_ALL_IPS[*]}")
+    ALLOWED_IPS=$(sqlite3 /var/lib/powerdns/pdns.sqlite3 \
+        "SELECT DISTINCT ip FROM supermasters ORDER BY ip;" 2>/dev/null | paste -sd,)
 
     # CPU-Kerne für receiver-threads (1:1 Mapping)
     local CPU_CORES
@@ -654,11 +659,16 @@ ClientAliveInterval 300
 ClientAliveCountMax 2
 EOF
 
-    # SSH Key hinzufügen falls angegeben
+    # SSH Key hinzufuegen - idempotent (verhindert Duplikate bei Re-Run)
     if [[ -n "$SSH_PUBKEY" ]]; then
-        log_info "Füge SSH Public Key hinzu..."
         mkdir -p /root/.ssh
-        echo "$SSH_PUBKEY" >> /root/.ssh/authorized_keys
+        touch /root/.ssh/authorized_keys
+        if grep -qF "$SSH_PUBKEY" /root/.ssh/authorized_keys; then
+            log_info "SSH Public Key bereits in authorized_keys"
+        else
+            echo "$SSH_PUBKEY" >> /root/.ssh/authorized_keys
+            log_info "SSH Public Key hinzugefuegt"
+        fi
         chmod 700 /root/.ssh
         chmod 600 /root/.ssh/authorized_keys
     fi
