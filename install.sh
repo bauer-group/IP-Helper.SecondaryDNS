@@ -644,7 +644,18 @@ EOF
         chmod 600 /root/.ssh/authorized_keys
     fi
 
-    systemctl restart sshd
+    # Service-Name unterscheidet sich: Debian/Ubuntu = 'ssh', RHEL/Fedora = 'sshd'
+    local ssh_unit=""
+    if systemctl list-unit-files ssh.service 2>/dev/null | grep -qE '^ssh\.service'; then
+        ssh_unit="ssh"
+    elif systemctl list-unit-files sshd.service 2>/dev/null | grep -qE '^sshd\.service'; then
+        ssh_unit="sshd"
+    else
+        log_error "Kein SSH-Service gefunden (weder ssh.service noch sshd.service)"
+        exit 1
+    fi
+    log_info "Starte SSH-Service ($ssh_unit) neu..."
+    systemctl restart "$ssh_unit"
 }
 
 # =============================================================================
