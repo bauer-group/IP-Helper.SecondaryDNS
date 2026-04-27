@@ -8,14 +8,24 @@ hier installierten Secondary uebernommen werden.
 
 ## Inhalt
 
-- [Die zwei Bedingungen](#die-zwei-bedingungen)
-- [SOA-MNAME-Mechanik](#soa-mname-mechanik)
-- [Diagnose: Was sendet mein Primary?](#diagnose-was-sendet-mein-primary)
-- [Plesk-spezifisch](#plesk-spezifisch)
-- [BIND-spezifisch](#bind-spezifisch)
-- [Workflow](#workflow-vom-primary-zur-ersten-zone-auf-dem-secondary)
-- [Haeufige Fehler](#haeufige-fehler)
-- [Troubleshooting](#troubleshooting)
+- [Primary DNS Server: Korrekte Einrichtung fuer Auto-Sync](#primary-dns-server-korrekte-einrichtung-fuer-auto-sync)
+  - [Inhalt](#inhalt)
+  - [Die zwei Bedingungen](#die-zwei-bedingungen)
+  - [SOA-MNAME-Mechanik](#soa-mname-mechanik)
+  - [Diagnose: Was sendet mein Primary?](#diagnose-was-sendet-mein-primary)
+  - [Plesk-spezifisch](#plesk-spezifisch)
+    - [Variante 1: DNS-Template vereinheitlichen (empfohlen)](#variante-1-dns-template-vereinheitlichen-empfohlen)
+    - [Variante 2: Pro-Zone-MNAMEs](#variante-2-pro-zone-mnames)
+    - [Plesk: Secondary als Slave eintragen](#plesk-secondary-als-slave-eintragen)
+    - [Plesk: NOTIFY pro Zone aktivieren](#plesk-notify-pro-zone-aktivieren)
+  - [BIND-spezifisch](#bind-spezifisch)
+  - [Workflow: Vom Primary zur ersten Zone auf dem Secondary](#workflow-vom-primary-zur-ersten-zone-auf-dem-secondary)
+  - [Haeufige Fehler](#haeufige-fehler)
+  - [Troubleshooting](#troubleshooting)
+    - [NOTIFY-Empfang im Log beobachten](#notify-empfang-im-log-beobachten)
+    - [Manueller AXFR-Test](#manueller-axfr-test)
+    - [Supermasters-Tabelle direkt inspizieren](#supermasters-tabelle-direkt-inspizieren)
+    - [Zone-Status pro Zone](#zone-status-pro-zone)
 
 ## Die zwei Bedingungen
 
@@ -47,7 +57,7 @@ Beispiele:
 |------|----------------------|
 | `example.com` | `ns1.example.com` |
 | `kunde-a.de` | `ns1.kunde-a.de` |
-| `bauer-group.com` | `25000-040.cloud.bauer-group.com` |
+| `bauer-group.com` | `ns2.example.com` |
 
 Beim NOTIFY signalisiert der Primary "Zone X hat sich geaendert".
 Der Secondary holt die Zone via AXFR und liest dabei den SOA. Der MNAME
@@ -100,7 +110,7 @@ NS-Record:    <server-fqdn>.
 SOA-Record:   <server-fqdn>.
 ```
 
-Beispiel: alle Zonen bekommen MNAME = `25000-040.cloud.bauer-group.com`.
+Beispiel: alle Zonen bekommen MNAME = `ns2.example.com`.
 Damit reicht ein einziger supermaster-Eintrag.
 
 > Plesk wendet Template-Aenderungen nur auf **neue** Zonen an. Bestehende
