@@ -1,3 +1,9 @@
+## [1.3.1](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.3.0...v1.3.1) (2026-04-27)
+
+### 🐛 Bug Fixes
+
+* **install:** vollstaendige Idempotenz fuer wiederholte Re-Runs ([ec8f5d9](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/ec8f5d9a129bc0f981615bec9c17905342bc771e))
+
 ## [1.3.0](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.2.0...v1.3.0) (2026-04-27)
 
 ### 🚀 Features
