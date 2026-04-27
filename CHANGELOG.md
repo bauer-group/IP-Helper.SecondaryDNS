@@ -1,3 +1,9 @@
+## [1.0.3](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.2...v1.0.3) (2026-04-27)
+
+### 🐛 Bug Fixes
+
+* **install:** konvertiere true/false zu yes/no fuer sshd_config ([7ebef7f](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/7ebef7fa5e91aff555d03f21b459112999850e36))
+
 ## [1.0.2](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.1...v1.0.2) (2026-04-27)
 
 ### 🐛 Bug Fixes
