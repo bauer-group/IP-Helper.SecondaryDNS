@@ -1,3 +1,9 @@
+## [1.3.2](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.3.1...v1.3.2) (2026-04-27)
+
+### 🐛 Bug Fixes
+
+* **install:** robustere SSH-Service-Detection via 'systemctl cat' ([1e962f6](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/1e962f60079d4a18f8a39d1412ddfbda00c13fd2))
+
 ## [1.3.1](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.3.0...v1.3.1) (2026-04-27)
 
 ### 🐛 Bug Fixes
