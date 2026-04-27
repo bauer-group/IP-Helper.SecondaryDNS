@@ -82,10 +82,14 @@ curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/
 
 ## Anforderungen
 
-- Ubuntu 24.04 LTS oder Debian 12
+- Debian 12 (Bookworm) / Debian 13 (Trixie) oder Ubuntu 22.04 / 24.04 LTS
 - **Minimal:** 1 vCPU, 1 GB RAM, 10 GB SSD
 - **Empfohlen:** 2 vCPU, 2 GB RAM, 10 GB SSD
 - Offene Ports: 22 (SSH), 53 (DNS, TCP+UDP, IPv4+IPv6)
+
+> Das Installationsskript prueft nur die Distro-Familie (Debian/Ubuntu),
+> keine spezifische Version. Neuere Releases derselben Familie sollten
+> funktionieren, sobald die PowerDNS-Pakete dort verfuegbar sind.
 
 ## Konfiguration mehrerer Primaries
 
