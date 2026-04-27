@@ -1,3 +1,9 @@
+## [1.3.0](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.2.0...v1.3.0) (2026-04-27)
+
+### 🚀 Features
+
+* **dns-admin:** primary discover + PRIMARY-SETUP.md Doku ([fd1bda1](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/fd1bda130c9339d5d78f6861f0080b33451d13d1))
+
 ## [1.2.0](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.1.2...v1.2.0) (2026-04-27)
 
 ### 🚀 Features
