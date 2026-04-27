@@ -617,16 +617,18 @@ EOF
 configure_ssh() {
     log_step "Konfiguriere SSH..."
 
-    # Root-Login Einstellung basierend auf Password-Auth
+    # sshd_config kennt nur 'yes'/'no' - .env-Konvention 'true'/'false' uebersetzen
     local ROOT_LOGIN="prohibit-password"
+    local PASSWORD_AUTH="no"
     if [[ "${SSH_PASSWORD_AUTH}" == "true" ]]; then
         ROOT_LOGIN="yes"
+        PASSWORD_AUTH="yes"
     fi
 
     cat > /etc/ssh/sshd_config.d/hardening.conf << EOF
 # SSH Hardening - Generiert am $(date)
 PermitRootLogin ${ROOT_LOGIN}
-PasswordAuthentication ${SSH_PASSWORD_AUTH}
+PasswordAuthentication ${PASSWORD_AUTH}
 PubkeyAuthentication yes
 X11Forwarding no
 AllowTcpForwarding no
@@ -652,6 +654,14 @@ EOF
         ssh_unit="sshd"
     else
         log_error "Kein SSH-Service gefunden (weder ssh.service noch sshd.service)"
+        exit 1
+    fi
+
+    # Config validieren BEVOR reload - sonst sehen wir den Fehler erst in
+    # systemd-Logs. sshd -t prueft Syntax, ohne den Daemon zu beruehren.
+    log_info "Validiere SSH-Config..."
+    if ! sshd -t 2>&1; then
+        log_error "SSH-Config in /etc/ssh/sshd_config.d/hardening.conf ist ungueltig!"
         exit 1
     fi
 
