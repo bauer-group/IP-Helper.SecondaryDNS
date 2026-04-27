@@ -1,3 +1,9 @@
+## [1.0.1](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.0...v1.0.1) (2026-04-27)
+
+### 🐛 Bug Fixes
+
+* **install:** erkannte SSH-Service-Name dynamisch (ssh vs sshd) ([f3c4546](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/f3c45462497590aa0d9cc3900d73bffa1b99a01e))
+
 ## [1.0.0](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v0.0.0...v1.0.0) (2026-04-27)
 
 ### ⚠ BREAKING CHANGES
