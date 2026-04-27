@@ -832,6 +832,64 @@ cmd_primary_reload() {
     reload_pdns
 }
 
+cmd_primary_discover() {
+    local primary_ip="${1:-}"
+    local zone="${2:-}"
+    if [[ -z "$primary_ip" || -z "$zone" ]]; then
+        err "Verwendung: dns-admin primary discover <primary-ip> <bekannte-zone>"
+    fi
+    validate_ip "$primary_ip"
+    validate_hostname "$zone"
+
+    if ! command -v dig >/dev/null 2>&1; then
+        err "dig nicht gefunden (Paket: dnsutils)"
+    fi
+
+    echo "Frage SOA von '${zone}' bei Primary ${primary_ip} ab..."
+    local soa
+    soa=$(dig @"$primary_ip" "$zone" SOA +short +time=5 +tries=2 2>/dev/null | head -1)
+
+    if [[ -z "$soa" ]]; then
+        err "Keine SOA-Antwort von ${primary_ip} fuer Zone ${zone} (Timeout, falsche IP, Zone unbekannt, oder ACL?)"
+    fi
+
+    # SOA-Format: "<mname> <rname> <serial> <refresh> <retry> <expire> <minimum>"
+    # Erste Spalte ist MNAME - trailing dot entfernen
+    local mname
+    mname=$(echo "$soa" | awk '{print $1}' | sed 's/\.$//')
+
+    if [[ -z "$mname" ]]; then
+        err "MNAME konnte aus SOA-Antwort nicht extrahiert werden: $soa"
+    fi
+
+    echo ""
+    echo "============================================"
+    echo "  Discovery-Ergebnis"
+    echo "============================================"
+    echo "  Zone:    ${zone}"
+    echo "  Primary: ${primary_ip}"
+    echo "  MNAME:   ${mname}"
+    echo ""
+
+    # Pruefen ob bereits in supermasters
+    local existing
+    existing=$(sqlite3 "$DB" \
+        "SELECT COUNT(*) FROM supermasters WHERE ip='${primary_ip}' AND nameserver='${mname}';" 2>/dev/null || echo 0)
+
+    if [[ "$existing" -gt 0 ]]; then
+        echo "  Status:  OK - bereits in supermasters konfiguriert."
+    else
+        echo "  Status:  NICHT in supermasters - dieser MNAME wird beim NOTIFY abgewiesen!"
+        echo ""
+        echo "  Eintrag hinzufuegen mit:"
+        echo "    sudo dns-admin primary add ${mname} ${primary_ip}"
+        echo ""
+        echo "  Falls der Primary auch IPv6 sendet, beide IPs angeben:"
+        echo "    sudo dns-admin primary add ${mname} ${primary_ip} <ipv6>"
+    fi
+    echo "============================================"
+}
+
 # --- zone subcommands (read-only / refresh) --------------------------------
 cmd_zone_list() {
     local count
@@ -1054,6 +1112,8 @@ PRIMARY-VERWALTUNG (root):
     primary add <hostname> <ip> [<ip> ...]      Primary hinzufuegen (IPv4/IPv6)
     primary remove <hostname-oder-ip>           Primary entfernen
     primary reload                              pdns.conf regenerieren + reload
+    primary discover <ip> <zone>                MNAME aus SOA ermitteln + add-Befehl
+                                                vorschlagen (siehe PRIMARY-SETUP.md)
 
 ZONEN (read-only / refresh - Anlage automatisch via NOTIFY):
     zone list                                   Zonen mit Status anzeigen
@@ -1090,6 +1150,7 @@ main() {
                 add)            cmd_primary_add "$@" ;;
                 remove|rm|del)  cmd_primary_remove "$@" ;;
                 reload)         cmd_primary_reload ;;
+                discover)       cmd_primary_discover "$@" ;;
                 *) err "Unbekannter primary-Befehl: $sub (siehe 'dns-admin help')" ;;
             esac
             ;;

@@ -44,11 +44,18 @@ Parameter im `.env` Block anpassen:
 
 ## Primary DNS Konfiguration (Plesk/BIND)
 
+> **Wichtig:** Detail-Anleitung pro Primary-Typ in [PRIMARY-SETUP.md](PRIMARY-SETUP.md).
+> Wenn Zonen nach NOTIFY nicht erscheinen, ist meist der **MNAME im SOA**
+> nicht in `supermasters` - siehe `dns-admin primary discover`.
+
 Pro konfiguriertem Primary:
 
-- [ ] Secondary als Slave eingetragen
+- [ ] Secondary als Slave eingetragen (IPv4 + IPv6)
 - [ ] NOTIFY fuer Secondary aktiviert
 - [ ] Test-Zone angelegt
+- [ ] MNAME-Diagnose durchgefuehrt:
+      `sudo dns-admin primary discover <primary-ip> <test-zone>`
+- [ ] Falls MNAME-Mismatch: passender `dns-admin primary add` ausgefuehrt
 
 ## Funktionstest
 

@@ -57,6 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/
 | [.env.example](.env.example) | Konfigurationsvorlage |
 | [cloud-init.yaml](cloud-init.yaml) | Cloud-Init fuer automatisches Deployment |
 | [CHECKLISTE.md](CHECKLISTE.md) | Deployment-Checkliste |
+| [PRIMARY-SETUP.md](PRIMARY-SETUP.md) | **Primary-Server korrekt einrichten** (Plesk/BIND, MNAME-Diagnose, Troubleshooting) |
 
 ## Architektur
 
@@ -122,9 +123,18 @@ dns-admin primary add ns3.example.com 192.0.2.30 2001:db8::30   # Hinzufuegen
 dns-admin primary remove ns3.example.com              # Entfernen (alle IPs)
 dns-admin primary remove 192.0.2.30                   # Einzelne IP entfernen
 dns-admin primary reload                              # pdns.conf regenerieren
+
+# MNAME-Diagnose: ermittelt den im SOA gesendeten MNAME und schlaegt
+# den passenden 'add'-Befehl vor. Wichtig wenn Zonen nach NOTIFY nicht
+# erscheinen - siehe PRIMARY-SETUP.md fuer Hintergruende.
+dns-admin primary discover 88.99.66.3 example.com
 ```
 
 Add/Remove laden die PowerDNS-Konfiguration automatisch neu.
+
+> **Setup-Hinweis:** Der Hostname in `primary add` muss dem **MNAME im SOA**
+> der Zonen entsprechen, die der Primary uebertraegt - **nicht** der reverse-DNS
+> Name der IP. Bei Plesk/BIND-Eigenheiten siehe [PRIMARY-SETUP.md](PRIMARY-SETUP.md).
 
 ### Zonen (read-only / refresh)
 
