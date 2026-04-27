@@ -460,10 +460,16 @@ cache-ttl=60
 negquery-cache-ttl=60
 query-cache-ttl=20
 
-# Rate Limiting (Anti-DDoS)
-# Hoher Wert wegen NAT (viele User hinter einer IP)
-max-qps-per-ip=1000
+# Empty-Non-Terminal Cache fuer signierte Zonen
 max-ent-entries=100000
+
+# Hinweis zu Rate Limiting:
+# 'max-qps-per-ip' existiert NUR im PowerDNS Recursor, NICHT im Authoritative
+# Server. Fuer DDoS-Schutz auf einem reinen Auth-Server eignet sich:
+#   - dnsdist als Frontend (https://dnsdist.org)
+#   - Hoster-DDoS-Schutz (Hetzner/Cloudflare/AWS Shield)
+#   - iptables hashlimit (rudimentaer, IP-basiert)
+# Der Reflection-Vektor ist hier minimal, da keine Recursion erlaubt ist.
 
 # Logging (Production)
 log-dns-queries=no
