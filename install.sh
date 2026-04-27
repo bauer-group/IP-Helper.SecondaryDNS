@@ -674,13 +674,21 @@ EOF
     fi
 
     # Service-Name unterscheidet sich: Debian/Ubuntu = 'ssh', RHEL/Fedora = 'sshd'
+    # 'systemctl cat' ist der robusteste Existenz-Check (funktioniert mit
+    # socket-aktivierten und aliased Units, unabhaengig vom State).
     local ssh_unit=""
-    if systemctl list-unit-files ssh.service 2>/dev/null | grep -qE '^ssh\.service'; then
-        ssh_unit="ssh"
-    elif systemctl list-unit-files sshd.service 2>/dev/null | grep -qE '^sshd\.service'; then
-        ssh_unit="sshd"
-    else
+    local u
+    for u in ssh sshd; do
+        if systemctl cat "${u}.service" >/dev/null 2>&1; then
+            ssh_unit="$u"
+            break
+        fi
+    done
+
+    if [[ -z "$ssh_unit" ]]; then
         log_error "Kein SSH-Service gefunden (weder ssh.service noch sshd.service)"
+        log_error "Diagnose - bekannte SSH-bezogene Units:"
+        systemctl list-units --type=service --all 2>/dev/null | grep -i ssh || echo "  (keine)"
         exit 1
     fi
 
