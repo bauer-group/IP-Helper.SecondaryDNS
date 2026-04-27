@@ -1,3 +1,9 @@
+## [1.0.2](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.1...v1.0.2) (2026-04-27)
+
+### 🐛 Bug Fixes
+
+* **install:** reload SSH-Service via SIGHUP statt restart ([1098b3b](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/1098b3b9d45d3450a4873bc07c551be1a66dd71a))
+
 ## [1.0.1](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.0...v1.0.1) (2026-04-27)
 
 ### 🐛 Bug Fixes
