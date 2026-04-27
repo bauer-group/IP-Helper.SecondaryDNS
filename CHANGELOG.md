@@ -1,3 +1,9 @@
+## [1.1.1](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.1.0...v1.1.1) (2026-04-27)
+
+### 🐛 Bug Fixes
+
+* **pdns:** entfernte obsoletes 'dnssec' Setting aus pdns.conf ([40a0a2d](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/40a0a2d2989a9044a7865779f964c3daf92dfb88))
+
 ## [1.1.0](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.3...v1.1.0) (2026-04-27)
 
 ### 🚀 Features
