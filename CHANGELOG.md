@@ -1,3 +1,9 @@
+## [1.1.0](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.3...v1.1.0) (2026-04-27)
+
+### 🚀 Features
+
+* **security:** haerterer fail2ban-Schutz und Sichtbarkeit in dns-admin ([db5bd29](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/db5bd29d14da378f533bf61d3f9dbb3823ff8389))
+
 ## [1.0.3](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.0.2...v1.0.3) (2026-04-27)
 
 ### 🐛 Bug Fixes
