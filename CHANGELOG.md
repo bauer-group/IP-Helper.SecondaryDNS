@@ -1,3 +1,9 @@
+## [1.2.0](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.1.2...v1.2.0) (2026-04-27)
+
+### 🚀 Features
+
+* **install:** proaktive PowerDNS-Konfigurationsvalidierung vor dem Start ([40e19ea](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/40e19ea673329600edb5ec59500a13d5bba46c14))
+
 ## [1.1.2](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.1.1...v1.1.2) (2026-04-27)
 
 ### 🐛 Bug Fixes
