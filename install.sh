@@ -1152,13 +1152,25 @@ EOF
 start_services() {
     log_step "Starte Dienste..."
 
+    # Pre-Flight: pdns.conf gegen aktuelle PowerDNS-Version validieren.
+    # Faengt unbekannte Settings (z.B. Recursor-Optionen wie max-qps-per-ip,
+    # oder entfernte wie 'dnssec') BEVOR systemd in den Restart-Loop geht.
+    log_info "Validiere PowerDNS-Konfiguration..."
+    local pdns_validation
+    pdns_validation=$(pdns_server --config-dir=/etc/powerdns --config 2>&1 >/dev/null || true)
+    if echo "$pdns_validation" | grep -qE 'Fatal|unknown setting'; then
+        log_error "PowerDNS-Konfigurationsfehler in /etc/powerdns/pdns.conf:"
+        echo "$pdns_validation" | grep -E 'Fatal|unknown' | head -5
+        log_error "Wahrscheinlich Recursor-Setting im Auth-Config oder veraltetes Setting."
+        log_error "Siehe: https://doc.powerdns.com/authoritative/settings.html"
+        exit 1
+    fi
+
     systemctl enable pdns
 
-    # Bei ungueltiger Config schlaegt restart fehl - sofortige klare Diagnose
-    # statt systemd-Restart-Loop, der erst im Journal sichtbar wird.
+    # Bei sonstigen Fehlern (z.B. Port belegt) schlaegt restart fehl
     if ! systemctl restart pdns; then
-        log_error "PowerDNS startet nicht - Konfigurationsfehler vermutet."
-        log_error "Letzte 20 Zeilen aus dem Journal:"
+        log_error "PowerDNS startet nicht. Letzte 20 Zeilen aus dem Journal:"
         journalctl -u pdns --no-pager -n 20
         exit 1
     fi
