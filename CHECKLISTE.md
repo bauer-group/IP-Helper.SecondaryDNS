@@ -2,19 +2,28 @@
 
 ## Vor dem Deployment
 
-- [ ] **Primary DNS IP(s):** ___________________
-- [ ] **Primary DNS Hostname:** ___________________
+Pro Primary-Server vorbereiten (es koennen mehrere sein):
+
+- [ ] **Primary 1 Hostname:** ___________________
+- [ ] **Primary 1 IPv4:** ___________________
+- [ ] **Primary 1 IPv6:** ___________________
+- [ ] **Primary 2 Hostname:** ___________________ (optional)
+- [ ] **Primary 2 IPv4:** ___________________ (optional)
+- [ ] **Primary 2 IPv6:** ___________________ (optional)
+
+Allgemein:
+
 - [ ] **Admin E-Mail:** ___________________
-- [ ] **Cloud-Provider ausgewählt:** ___________________
+- [ ] **Cloud-Provider ausgewaehlt:** ___________________
 
 ## Konfiguration
 
 ### Bei Cloud-Init (`cloud-init.yaml`)
 
-Parameter im `.env` Block anpassen (Zeilen 20-50):
+Parameter im `.env` Block anpassen:
 
-- [ ] `PRIMARY_DNS_IP` gesetzt
-- [ ] `PRIMARY_DNS_HOSTNAME` gesetzt
+- [ ] `PRIMARY_1_HOSTNAME`, `PRIMARY_1_IPV4`, `PRIMARY_1_IPV6` gesetzt
+- [ ] Weitere `PRIMARY_N_*`-Bloecke einkommentieren falls benoetigt
 - [ ] `ADMIN_EMAIL` gesetzt
 - [ ] `SSH_PUBKEY` eingetragen (optional)
 - [ ] `SECONDARY_HOSTNAME` angepasst
@@ -27,16 +36,18 @@ Parameter im `.env` Block anpassen (Zeilen 20-50):
 
 ## Deployment
 
-- [ ] VM erstellt (2 vCPU, 4 GB RAM, 10 GB SSD)
-- [ ] Cloud-Init/Script ausgeführt
+- [ ] VM erstellt (mind. 1 vCPU, 1 GB RAM, 10 GB SSD)
+- [ ] Cloud-Init/Script ausgefuehrt
 - [ ] Server erreichbar via SSH
-- [ ] PowerDNS läuft: `systemctl status pdns`
+- [ ] PowerDNS laeuft: `systemctl status pdns`
 - [ ] Firewall aktiv: `ufw status`
 
 ## Primary DNS Konfiguration (Plesk/BIND)
 
+Pro konfiguriertem Primary:
+
 - [ ] Secondary als Slave eingetragen
-- [ ] NOTIFY für Secondary aktiviert
+- [ ] NOTIFY fuer Secondary aktiviert
 - [ ] Test-Zone angelegt
 
 ## Funktionstest
@@ -44,36 +55,53 @@ Parameter im `.env` Block anpassen (Zeilen 20-50):
 ```bash
 # Auf dem Secondary Server:
 
-# 1. Zonen vom Primary übernommen?
-pdnsutil list-all-zones
+# 1. Status & Primaries
+dns-admin status
+dns-admin primary list
 
-# 2. Autoritative Abfrage funktioniert?
+# 2. Zonen vom Primary uebernommen?
+dns-admin zone list
+
+# 3. Autoritative Abfrage funktioniert?
 dig @localhost example.com A
 
-# 3. Unbekannte Domain wird abgelehnt? (REFUSED erwartet)
+# 4. Unbekannte Domain wird abgelehnt? (REFUSED erwartet)
 dig @localhost google.com A
 
-# 4. Von extern erreichbar?
+# 5. Health-Check
+dns-admin health
+
+# 6. Von extern erreichbar?
 dig @<SECONDARY_IP> example.com A
 ```
 
-- [ ] Zonen sind synchronisiert
+- [ ] `dns-admin status` zeigt alle Primaries
+- [ ] Zonen sind synchronisiert (`dns-admin zone list`)
 - [ ] Autoritative Antworten korrekt
-- [ ] Unbekannte Domains → REFUSED (keine Rekursion!)
-- [ ] Von extern erreichbar
+- [ ] Unbekannte Domains -> REFUSED (keine Rekursion!)
+- [ ] Von extern erreichbar (IPv4 + IPv6)
+- [ ] `dns-admin health` -> OK
 
 ## DNS-Registrar
 
 - [ ] NS-Records beim Registrar aktualisiert
-- [ ] Propagation geprüft (nach 24-48h)
+- [ ] Propagation geprueft (nach 24-48h)
+
+## Spaeteres Hinzufuegen weiterer Primaries
+
+```bash
+sudo dns-admin primary add ns3.example.com 192.0.2.30 2001:db8::30
+```
+
+PowerDNS wird automatisch neu geladen. Kein Re-Install noetig.
 
 ## Abschluss
 
 - [ ] Dokumentation aktualisiert
-- [ ] Übergabe an Betrieb
+- [ ] Uebergabe an Betrieb
 
 ---
 
-**Deployment durchgeführt von:** ___________________
+**Deployment durchgefuehrt von:** ___________________
 
 **Datum:** ___________________

@@ -3,8 +3,11 @@
 # Secondary DNS Server - Cloud-Init
 # =============================================================================
 #
-# Lädt install.sh von GitHub und führt es aus.
+# Laedt install.sh von GitHub und fuehrt es aus.
 # Alle Parameter sind im .env Block unten - einfach anpassen und deployen!
+#
+# Zur Laufzeit lassen sich weitere Primaries einfach hinzufuegen:
+#   dns-admin primary add ns3.example.com 192.0.2.30 2001:db8::30
 #
 # GitHub: https://github.com/bauer-group/IP-Helper.SecondaryDNS
 #
@@ -20,11 +23,27 @@ write_files:
     permissions: "0600"
     content: |
       # =========================================================================
+      # PRIMARY DNS SERVER (mindestens ein Primary erforderlich)
+      # Jeder Primary kann IPv4 und/oder IPv6 haben.
+      # =========================================================================
+
+      PRIMARY_1_HOSTNAME="ns1.example.com"
+      PRIMARY_1_IPV4="203.0.113.10"
+      PRIMARY_1_IPV6="2001:db8::10"
+
+      # Optional weitere Primaries (einfach einkommentieren):
+      # PRIMARY_2_HOSTNAME="ns2.example.com"
+      # PRIMARY_2_IPV4="203.0.113.11"
+      # PRIMARY_2_IPV6="2001:db8::11"
+
+      # PRIMARY_3_HOSTNAME="ns3.example.com"
+      # PRIMARY_3_IPV4="203.0.113.12"
+      # PRIMARY_3_IPV6="2001:db8::12"
+
+      # =========================================================================
       # PFLICHTANGABEN
       # =========================================================================
 
-      PRIMARY_DNS_IP="203.0.113.10"
-      PRIMARY_DNS_HOSTNAME="ns1.example.com"
       ADMIN_EMAIL="admin@example.com"
 
       # =========================================================================
@@ -50,15 +69,15 @@ write_files:
       REBOOT_TIME="03:00"
 
       # =========================================================================
-      # OPTIONAL: TSIG-KEY (für sichere Zone-Transfers)
+      # OPTIONAL: TSIG-KEY (fuer sichere Zone-Transfers)
       # =========================================================================
 
-      # Format: name:algorithm:secret (leer lassen wenn nicht benötigt)
+      # Format: name:algorithm:secret (leer lassen wenn nicht benoetigt)
       TSIG_KEY=""
 
 # ###########################################################################
 #
-#                    AB HIER NICHTS ÄNDERN
+#                    AB HIER NICHTS AENDERN
 #
 # ###########################################################################
 

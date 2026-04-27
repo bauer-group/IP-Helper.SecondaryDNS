@@ -14,7 +14,9 @@
 #     sudo ./install.sh
 #
 #   Option 2: Mit Umgebungsvariablen
-#     sudo PRIMARY_DNS_IP="1.2.3.4" PRIMARY_DNS_HOSTNAME="ns1.example.com" \
+#     sudo PRIMARY_1_HOSTNAME="ns1.example.com" \
+#          PRIMARY_1_IPV4="1.2.3.4" \
+#          PRIMARY_1_IPV6="2001:db8::1" \
 #          ADMIN_EMAIL="admin@example.com" ./install.sh
 #
 #   Option 3: Via Cloud-Init (lädt Script von GitHub)
@@ -59,9 +61,19 @@ fi
 # =============================================================================
 # Standardwerte setzen
 # =============================================================================
-PRIMARY_DNS_IP="${PRIMARY_DNS_IP:-}"
-PRIMARY_DNS_HOSTNAME="${PRIMARY_DNS_HOSTNAME:-}"
+# Primary DNS Server werden über numerierte Variablen konfiguriert:
+#   PRIMARY_1_HOSTNAME, PRIMARY_1_IPV4, PRIMARY_1_IPV6
+#   PRIMARY_2_HOSTNAME, PRIMARY_2_IPV4, PRIMARY_2_IPV6
+#   ... (beliebig viele)
+# Mindestens ein Primary mit Hostname und einer IP (v4 oder v6) ist Pflicht.
 ADMIN_EMAIL="${ADMIN_EMAIL:-root@localhost}"
+
+# Aggregierte Arrays werden von parse_primary_servers() befüllt
+PRIMARY_HOSTS=()
+PRIMARY_V4S=()
+PRIMARY_V6S=()
+PRIMARY_ALL_IPS=()
+PRIMARY_PAIRS=()
 
 SECONDARY_HOSTNAME="${SECONDARY_HOSTNAME:-ns2}"
 SECONDARY_FQDN="${SECONDARY_FQDN:-ns2.local}"
@@ -78,31 +90,70 @@ REBOOT_TIME="${REBOOT_TIME:-03:00}"
 TSIG_KEY="${TSIG_KEY:-}"
 
 # =============================================================================
+# Primary-Server aus PRIMARY_N_* Variablen einlesen
+# =============================================================================
+parse_primary_servers() {
+    PRIMARY_HOSTS=()
+    PRIMARY_V4S=()
+    PRIMARY_V6S=()
+    PRIMARY_ALL_IPS=()
+    PRIMARY_PAIRS=()
+
+    local i=1
+    while true; do
+        local host_var="PRIMARY_${i}_HOSTNAME"
+        local v4_var="PRIMARY_${i}_IPV4"
+        local v6_var="PRIMARY_${i}_IPV6"
+
+        local host="${!host_var:-}"
+        # Stoppen sobald ein Index ohne Hostname kommt (zusammenhängende Liste)
+        [[ -z "$host" ]] && break
+
+        local v4="${!v4_var:-}"
+        local v6="${!v6_var:-}"
+
+        if [[ -z "$v4" && -z "$v6" ]]; then
+            log_error "PRIMARY_${i}_HOSTNAME=\"$host\" gesetzt, aber weder PRIMARY_${i}_IPV4 noch PRIMARY_${i}_IPV6!"
+            exit 1
+        fi
+
+        PRIMARY_HOSTS+=("$host")
+        PRIMARY_V4S+=("$v4")
+        PRIMARY_V6S+=("$v6")
+        if [[ -n "$v4" ]]; then
+            PRIMARY_ALL_IPS+=("$v4")
+            PRIMARY_PAIRS+=("$v4|$host")
+        fi
+        if [[ -n "$v6" ]]; then
+            PRIMARY_ALL_IPS+=("$v6")
+            PRIMARY_PAIRS+=("$v6|$host")
+        fi
+
+        i=$((i + 1))
+    done
+}
+
+# =============================================================================
 # Validierung
 # =============================================================================
 validate_config() {
-    local errors=0
+    parse_primary_servers
 
-    if [[ -z "$PRIMARY_DNS_IP" ]]; then
-        log_error "PRIMARY_DNS_IP ist nicht gesetzt!"
-        errors=$((errors + 1))
-    fi
-
-    if [[ -z "$PRIMARY_DNS_HOSTNAME" ]]; then
-        log_error "PRIMARY_DNS_HOSTNAME ist nicht gesetzt!"
-        errors=$((errors + 1))
-    fi
-
-    if [[ $errors -gt 0 ]]; then
+    if [[ ${#PRIMARY_HOSTS[@]} -eq 0 ]]; then
         echo ""
-        log_error "Konfiguration unvollständig. Bitte .env Datei prüfen."
+        log_error "Mindestens ein Primary DNS Server muss konfiguriert sein!"
         echo ""
         echo "Beispiel:"
-        echo "  PRIMARY_DNS_IP=\"203.0.113.10\""
-        echo "  PRIMARY_DNS_HOSTNAME=\"ns1.example.com\""
+        echo "  PRIMARY_1_HOSTNAME=\"ns1.example.com\""
+        echo "  PRIMARY_1_IPV4=\"203.0.113.10\""
+        echo "  PRIMARY_1_IPV6=\"2001:db8::10\""
         echo "  ADMIN_EMAIL=\"admin@example.com\""
+        echo ""
+        echo "Optional weitere Primaries: PRIMARY_2_HOSTNAME, PRIMARY_2_IPV4, ..."
         exit 1
     fi
+
+    log_info "Konfiguration: ${#PRIMARY_HOSTS[@]} Primary Server, ${#PRIMARY_ALL_IPS[@]} IPs gesamt"
 }
 
 # =============================================================================
@@ -144,8 +195,13 @@ show_config() {
     echo "============================================"
     echo "  Konfiguration"
     echo "============================================"
-    echo "  Primary DNS IP:       $PRIMARY_DNS_IP"
-    echo "  Primary DNS Hostname: $PRIMARY_DNS_HOSTNAME"
+    echo "  Primary DNS Server:"
+    local i
+    for i in "${!PRIMARY_HOSTS[@]}"; do
+        echo "    $((i+1)). ${PRIMARY_HOSTS[$i]}"
+        [[ -n "${PRIMARY_V4S[$i]}" ]] && echo "       IPv4: ${PRIMARY_V4S[$i]}"
+        [[ -n "${PRIMARY_V6S[$i]}" ]] && echo "       IPv6: ${PRIMARY_V6S[$i]}"
+    done
     echo "  Admin E-Mail:         $ADMIN_EMAIL"
     echo "  Secondary Hostname:   $SECONDARY_HOSTNAME"
     echo "  Secondary FQDN:       $SECONDARY_FQDN"
@@ -324,13 +380,14 @@ CREATE TABLE IF NOT EXISTS tsigkeys (
 CREATE UNIQUE INDEX IF NOT EXISTS namealgoindex ON tsigkeys(name, algorithm);
 EOFSCHEMA
 
-    # Supermaster-Einträge für alle Primary IPs
-    IFS=',' read -ra PRIMARY_ARRAY <<< "$PRIMARY_DNS_IP"
-    for ip in "${PRIMARY_ARRAY[@]}"; do
-        ip=$(echo "$ip" | xargs)  # Whitespace entfernen
-        log_info "Füge Supermaster hinzu: $ip ($PRIMARY_DNS_HOSTNAME)"
+    # Supermaster-Einträge: ein Eintrag pro (IP, Hostname)-Paar
+    # PowerDNS akzeptiert NOTIFYs nur, wenn IP UND SOA-MNAME zu einem Eintrag passen.
+    local entry ip host
+    for entry in "${PRIMARY_PAIRS[@]}"; do
+        IFS='|' read -r ip host <<< "$entry"
+        log_info "Füge Supermaster hinzu: $ip ($host)"
         sqlite3 /var/lib/powerdns/pdns.sqlite3 \
-            "INSERT OR IGNORE INTO supermasters (ip, nameserver, account) VALUES ('$ip', '$PRIMARY_DNS_HOSTNAME', 'primary');"
+            "INSERT OR IGNORE INTO supermasters (ip, nameserver, account) VALUES ('$ip', '$host', 'primary');"
     done
 
     # TSIG-Key einrichten falls konfiguriert
@@ -353,9 +410,9 @@ EOFSCHEMA
 configure_powerdns() {
     log_step "Konfiguriere PowerDNS..."
 
-    # IPs für Konfiguration formatieren (Komma-separiert)
+    # IP-Liste für AXFR/NOTIFY (alle Primary-IPs, Komma-separiert)
     local ALLOWED_IPS
-    ALLOWED_IPS=$(echo "$PRIMARY_DNS_IP" | tr ',' ',')
+    ALLOWED_IPS=$(IFS=','; echo "${PRIMARY_ALL_IPS[*]}")
 
     # CPU-Kerne für receiver-threads (1:1 Mapping)
     local CPU_CORES
@@ -388,9 +445,11 @@ gsqlite3-pragma-foreign-keys=1
 secondary=yes
 autosecondary=yes
 
-# Whitelist für AXFR/NOTIFY
+# Whitelist für AXFR/NOTIFY - wird von dns-admin verwaltet, NICHT manuell editieren!
+# BEGIN PRIMARY-IPS (managed by dns-admin)
 allow-axfr-ips=127.0.0.1,::1,${ALLOWED_IPS}
 allow-notify-from=127.0.0.1,::1,${ALLOWED_IPS}
+# END PRIMARY-IPS
 
 # DNSSEC
 dnssec=process-no-validate
@@ -411,7 +470,7 @@ log-dns-queries=no
 log-dns-details=no
 loglevel=4
 
-# API deaktiviert
+# API/Webserver deaktiviert (nicht benoetigt - dns-admin nutzt sqlite3 + pdns_control)
 api=no
 webserver=no
 
@@ -589,128 +648,411 @@ EOF
 }
 
 # =============================================================================
-# Status-Script erstellen
+# Zentrales Management-Tool 'dns-admin' erstellen
 # =============================================================================
-create_status_script() {
-    log_step "Erstelle Status-Script..."
+create_admin_tool() {
+    log_step "Erstelle dns-admin Management-Tool..."
 
-    cat > /usr/local/bin/dns-status << 'EOFSCRIPT'
+    cat > /usr/local/bin/dns-admin << 'EOFSCRIPT'
 #!/bin/bash
-# DNS Server Status Script
+# =============================================================================
+# dns-admin - Secondary DNS Management Tool
+#
+# Zentrales Tool fuer Verwaltung, Status und Monitoring eines PowerDNS
+# Secondary-Servers. Zonen werden automatisch via NOTIFY/AXFR vom Primary
+# uebernommen - dieses Tool verwaltet ausschliesslich:
+#   - Primary-Server (Add/Remove/List)
+#   - Zonen-Status (Read/Refresh)
+#   - Server-Status, Health-Checks und Statistiken
+# =============================================================================
 
-echo "============================================"
-echo "  Secondary DNS Server Status"
-echo "============================================"
-echo ""
+set -euo pipefail
 
-# PowerDNS Status
-echo "--- PowerDNS Service ---"
-systemctl is-active pdns >/dev/null 2>&1 && echo "Status: RUNNING" || echo "Status: STOPPED"
-echo ""
+DB="/var/lib/powerdns/pdns.sqlite3"
+CONF="/etc/powerdns/pdns.conf"
 
-# Zonen
-echo "--- Zonen ($(pdnsutil list-all-zones 2>/dev/null | wc -l)) ---"
-pdnsutil list-all-zones 2>/dev/null | head -10
-ZONE_COUNT=$(pdnsutil list-all-zones 2>/dev/null | wc -l)
-if [[ $ZONE_COUNT -gt 10 ]]; then
-    echo "... und $((ZONE_COUNT - 10)) weitere"
-fi
-echo ""
+# --- Helpers ---------------------------------------------------------------
+err()  { echo "ERROR: $*" >&2; exit 1; }
+warn() { echo "WARN:  $*" >&2; }
+need_root() { [[ $EUID -eq 0 ]] || err "Befehl benoetigt root-Rechte"; }
 
-# Supermaster
-echo "--- Supermaster (Primary DNS) ---"
-sqlite3 /var/lib/powerdns/pdns.sqlite3 "SELECT ip, nameserver FROM supermasters;" 2>/dev/null || echo "Keine Supermasters konfiguriert"
-echo ""
-
-# Netzwerk
-echo "--- Listening ---"
-ss -tulpn | grep pdns | head -5
-echo ""
-
-# Zeit
-echo "--- System Zeit ---"
-echo "Lokal:  $(date)"
-echo "Chrony: $(chronyc tracking 2>/dev/null | grep 'System time' || echo 'nicht verfügbar')"
-echo ""
-
-# Ressourcen
-echo "--- Ressourcen ---"
-echo "Disk:   $(df -h /var/lib/powerdns 2>/dev/null | tail -1 | awk '{print $3 " / " $2 " (" $5 " used)"}')"
-echo "Memory: $(free -h | grep Mem | awk '{print $3 " / " $2}')"
-echo ""
-
-echo "============================================"
-EOFSCRIPT
-
-    chmod +x /usr/local/bin/dns-status
+# Sanitize: Hostnames duerfen nur a-z, 0-9, '.', '-' enthalten.
+# IPs nur 0-9, a-f, '.', ':'. Verhindert SQL-Injection ueber User-Input.
+validate_hostname() {
+    [[ "$1" =~ ^[a-zA-Z0-9.-]+$ ]] || err "Ungueltiger Hostname: $1"
+}
+validate_ip() {
+    [[ "$1" =~ ^[0-9a-fA-F.:]+$ ]] || err "Ungueltige IP-Adresse: $1"
 }
 
-# =============================================================================
-# Health-Check Script erstellen
-# =============================================================================
-create_health_check() {
-    log_step "Erstelle Health-Check Script..."
+# Regeneriert den BEGIN/END PRIMARY-IPS Block in pdns.conf aus der DB
+regen_pdns_conf() {
+    need_root
+    local ips
+    ips=$(sqlite3 "$DB" "SELECT DISTINCT ip FROM supermasters ORDER BY ip;" | paste -sd ',')
+    local prefix=""
+    [[ -n "$ips" ]] && prefix=","
 
-    cat > /usr/local/bin/dns-health-check << 'EOFSCRIPT'
-#!/bin/bash
-# DNS Server Health Check
-# Exit codes: 0 = OK, 1 = WARNING, 2 = CRITICAL
+    if ! grep -q "^# BEGIN PRIMARY-IPS" "$CONF"; then
+        err "Sentinel-Marker 'BEGIN PRIMARY-IPS' fehlt in $CONF - bitte install.sh erneut laufen lassen"
+    fi
 
-ERRORS=0
-WARNINGS=0
+    local tmp
+    tmp=$(mktemp)
+    awk -v ips="$ips" -v prefix="$prefix" '
+        /^# BEGIN PRIMARY-IPS/ {
+            print "# BEGIN PRIMARY-IPS (managed by dns-admin)"
+            print "allow-axfr-ips=127.0.0.1,::1" prefix ips
+            print "allow-notify-from=127.0.0.1,::1" prefix ips
+            print "# END PRIMARY-IPS"
+            in_block = 1
+            next
+        }
+        /^# END PRIMARY-IPS/ { in_block = 0; next }
+        !in_block { print }
+    ' "$CONF" > "$tmp"
 
-# Prüfe PowerDNS Service
-if ! systemctl is-active pdns >/dev/null 2>&1; then
-    echo "CRITICAL: PowerDNS ist nicht aktiv"
-    ERRORS=$((ERRORS + 1))
-fi
+    mv "$tmp" "$CONF"
+    chown pdns:pdns "$CONF"
+    chmod 640 "$CONF"
+}
 
-# Prüfe ob Port 53 offen ist
-if ! ss -tulpn | grep -q ':53 '; then
-    echo "CRITICAL: Port 53 nicht erreichbar"
-    ERRORS=$((ERRORS + 1))
-fi
+reload_pdns() {
+    need_root
+    if systemctl reload pdns 2>/dev/null; then
+        echo "PowerDNS neu geladen"
+    else
+        systemctl restart pdns
+        echo "PowerDNS neu gestartet"
+    fi
+}
 
-# Prüfe DNS-Antwort (localhost)
-if ! dig @127.0.0.1 +short +time=2 version.bind chaos txt >/dev/null 2>&1; then
-    echo "CRITICAL: DNS antwortet nicht auf localhost"
-    ERRORS=$((ERRORS + 1))
-fi
+# --- primary subcommands ---------------------------------------------------
+cmd_primary_list() {
+    local count
+    count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM supermasters;" 2>/dev/null || echo 0)
+    if [[ "$count" -eq 0 ]]; then
+        echo "Keine Primary-Server konfiguriert."
+        return 0
+    fi
+    echo "Primary DNS Server (${count} Eintraege):"
+    echo ""
+    sqlite3 -header -column "$DB" \
+        "SELECT nameserver AS Hostname, ip AS IP, account AS Account FROM supermasters ORDER BY nameserver, ip;"
+}
 
-# Prüfe Chrony
-if ! systemctl is-active chrony >/dev/null 2>&1; then
-    echo "WARNING: Chrony ist nicht aktiv"
-    WARNINGS=$((WARNINGS + 1))
-fi
+cmd_primary_add() {
+    need_root
+    local hostname="${1:-}"
+    [[ -z "$hostname" ]] && err "Verwendung: dns-admin primary add <hostname> <ip> [<ip> ...]"
+    validate_hostname "$hostname"
+    shift
+    [[ $# -eq 0 ]] && err "Mindestens eine IP angeben (IPv4 und/oder IPv6)"
 
-# Prüfe Disk Space (warnung bei >90%)
-DISK_USAGE=$(df /var/lib/powerdns 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
-if [[ -n "$DISK_USAGE" ]] && [[ $DISK_USAGE -gt 90 ]]; then
-    echo "WARNING: Disk usage bei ${DISK_USAGE}%"
-    WARNINGS=$((WARNINGS + 1))
-fi
+    local ip
+    for ip in "$@"; do
+        validate_ip "$ip"
+        sqlite3 "$DB" \
+            "INSERT OR IGNORE INTO supermasters (ip, nameserver, account) VALUES ('$ip', '$hostname', 'primary');"
+        echo "  + $ip ($hostname)"
+    done
+    chown pdns:pdns "$DB"
 
-# Prüfe Zonenanzahl
-ZONE_COUNT=$(pdnsutil list-all-zones 2>/dev/null | wc -l)
-if [[ $ZONE_COUNT -eq 0 ]]; then
-    echo "WARNING: Keine Zonen vorhanden"
-    WARNINGS=$((WARNINGS + 1))
-fi
+    regen_pdns_conf
+    reload_pdns
+}
 
-# Ergebnis
-if [[ $ERRORS -gt 0 ]]; then
-    echo "HEALTH CHECK: CRITICAL ($ERRORS errors, $WARNINGS warnings)"
-    exit 2
-elif [[ $WARNINGS -gt 0 ]]; then
-    echo "HEALTH CHECK: WARNING ($WARNINGS warnings)"
-    exit 1
-else
-    echo "HEALTH CHECK: OK (${ZONE_COUNT} zones)"
-    exit 0
-fi
+cmd_primary_remove() {
+    need_root
+    local target="${1:-}"
+    [[ -z "$target" ]] && err "Verwendung: dns-admin primary remove <hostname-oder-ip>"
+
+    # Erlaube hostname ODER ip (validate beide Formate; mindestens eines muss matchen)
+    [[ "$target" =~ ^[a-zA-Z0-9.:.-]+$ ]] || err "Ungueltiger Wert: $target"
+
+    local count
+    count=$(sqlite3 "$DB" \
+        "SELECT COUNT(*) FROM supermasters WHERE nameserver='$target' OR ip='$target';")
+    [[ "$count" -eq 0 ]] && err "Kein Eintrag fuer '$target' gefunden"
+
+    sqlite3 "$DB" \
+        "DELETE FROM supermasters WHERE nameserver='$target' OR ip='$target';"
+    echo "Entfernt: $count Eintrag(e) fuer '$target'"
+
+    regen_pdns_conf
+    reload_pdns
+}
+
+cmd_primary_reload() {
+    need_root
+    regen_pdns_conf
+    reload_pdns
+}
+
+# --- zone subcommands (read-only / refresh) --------------------------------
+cmd_zone_list() {
+    local count
+    count=$(sqlite3 "$DB" "SELECT COUNT(*) FROM domains;" 2>/dev/null || echo 0)
+    if [[ "$count" -eq 0 ]]; then
+        echo "Keine Zonen vorhanden."
+        echo "Zonen werden automatisch angelegt, sobald der Primary einen NOTIFY sendet."
+        return 0
+    fi
+    echo "Zonen (${count}, automatisch synchronisiert via NOTIFY/AXFR):"
+    echo ""
+    sqlite3 -header -column "$DB" "
+        SELECT
+            d.name AS Zone,
+            d.type AS Type,
+            d.master AS Master,
+            COALESCE(d.last_check, 0) AS LastCheck,
+            (SELECT COUNT(*) FROM records WHERE domain_id = d.id) AS Records
+        FROM domains d
+        ORDER BY d.name;"
+}
+
+cmd_zone_show() {
+    local zone="${1:-}"
+    [[ -z "$zone" ]] && err "Verwendung: dns-admin zone show <zone>"
+    pdnsutil show-zone "$zone"
+}
+
+cmd_zone_retrieve() {
+    need_root
+    local zone="${1:-}"
+    [[ -z "$zone" ]] && err "Verwendung: dns-admin zone retrieve <zone>"
+    pdnsutil retrieve-zone "$zone"
+}
+
+cmd_zone_check() {
+    local zone="${1:-}"
+    if [[ -n "$zone" ]]; then
+        pdnsutil check-zone "$zone"
+    else
+        pdnsutil check-all-zones
+    fi
+}
+
+cmd_zone_delete() {
+    need_root
+    local zone="${1:-}"
+    [[ -z "$zone" ]] && err "Verwendung: dns-admin zone delete <zone>"
+    echo ""
+    echo "WARNUNG: Diese Zone wird beim naechsten NOTIFY vom Primary erneut angelegt."
+    echo "Nur sinnvoll, wenn die Zone auf dem Primary ebenfalls geloescht wurde."
+    echo ""
+    if [[ -t 0 ]]; then
+        read -p "Trotzdem loeschen? (j/n): " -n 1 -r reply
+        echo
+        [[ ! "$reply" =~ ^[JjYy]$ ]] && { echo "Abgebrochen."; return 0; }
+    fi
+    pdnsutil delete-zone "$zone"
+}
+
+# --- status / health / stats ----------------------------------------------
+cmd_status() {
+    echo "============================================"
+    echo "  Secondary DNS Server Status"
+    echo "============================================"
+
+    if systemctl is-active pdns >/dev/null 2>&1; then
+        local since
+        since=$(systemctl show pdns --property=ActiveEnterTimestamp --value 2>/dev/null || echo "?")
+        echo "PowerDNS:    RUNNING (seit ${since})"
+    else
+        echo "PowerDNS:    STOPPED"
+    fi
+
+    echo ""
+    echo "--- Listening ---"
+    ss -tulpn 2>/dev/null | grep pdns | head -5 || echo "  (keine Daten)"
+
+    echo ""
+    echo "--- Primary DNS Server ---"
+    local pcount
+    pcount=$(sqlite3 "$DB" "SELECT COUNT(*) FROM supermasters;" 2>/dev/null || echo 0)
+    if [[ "$pcount" -eq 0 ]]; then
+        echo "  (keine konfiguriert)"
+    else
+        sqlite3 "$DB" "SELECT '  ' || nameserver || '  ' || ip FROM supermasters ORDER BY nameserver, ip;"
+    fi
+
+    echo ""
+    local zcount
+    zcount=$(sqlite3 "$DB" "SELECT COUNT(*) FROM domains;" 2>/dev/null || echo 0)
+    echo "--- Zonen: ${zcount} ---"
+    if [[ "$zcount" -gt 0 ]]; then
+        sqlite3 "$DB" "SELECT '  ' || name FROM domains ORDER BY name LIMIT 10;"
+        [[ "$zcount" -gt 10 ]] && echo "  ... und $((zcount - 10)) weitere"
+    fi
+
+    echo ""
+    echo "--- Statistik ---"
+    if command -v pdns_control >/dev/null 2>&1 && pdns_control rping >/dev/null 2>&1; then
+        local q ch cm up
+        q=$(pdns_control show udp-queries 2>/dev/null || echo "?")
+        ch=$(pdns_control show packetcache-hit 2>/dev/null || echo "?")
+        cm=$(pdns_control show packetcache-miss 2>/dev/null || echo "?")
+        up=$(pdns_control show uptime 2>/dev/null || echo "?")
+        echo "  UDP-Queries:  ${q}"
+        echo "  Cache-Hits:   ${ch}"
+        echo "  Cache-Miss:   ${cm}"
+        echo "  Uptime:       ${up}s"
+    else
+        echo "  (pdns_control nicht erreichbar)"
+    fi
+
+    echo ""
+    echo "--- System ---"
+    echo "  Disk:   $(df -h /var/lib/powerdns 2>/dev/null | tail -1 | awk '{print $3 " / " $2 " (" $5 ")"}')"
+    echo "  Memory: $(free -h | awk '/^Mem:/ {print $3 " / " $2}')"
+    echo "  Time:   $(date '+%Y-%m-%d %H:%M:%S %Z')"
+    echo "============================================"
+}
+
+cmd_health() {
+    local errors=0 warnings=0
+
+    if ! systemctl is-active pdns >/dev/null 2>&1; then
+        echo "CRITICAL: PowerDNS ist nicht aktiv"
+        errors=$((errors + 1))
+    fi
+
+    if ! ss -tulpn 2>/dev/null | grep -q ':53 '; then
+        echo "CRITICAL: Port 53 nicht erreichbar"
+        errors=$((errors + 1))
+    fi
+
+    if ! dig @127.0.0.1 +short +time=2 version.bind chaos txt >/dev/null 2>&1; then
+        echo "CRITICAL: DNS antwortet nicht auf localhost"
+        errors=$((errors + 1))
+    fi
+
+    local pcount
+    pcount=$(sqlite3 "$DB" "SELECT COUNT(*) FROM supermasters;" 2>/dev/null || echo 0)
+    if [[ "$pcount" -eq 0 ]]; then
+        echo "CRITICAL: Keine Primary-Server konfiguriert"
+        errors=$((errors + 1))
+    fi
+
+    if ! systemctl is-active chrony >/dev/null 2>&1; then
+        echo "WARNING: Chrony ist nicht aktiv (Zeitsynchronisation)"
+        warnings=$((warnings + 1))
+    fi
+
+    local disk_usage
+    disk_usage=$(df /var/lib/powerdns 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+    if [[ -n "$disk_usage" && "$disk_usage" -gt 90 ]]; then
+        echo "WARNING: Disk usage bei ${disk_usage}%"
+        warnings=$((warnings + 1))
+    fi
+
+    local zcount
+    zcount=$(sqlite3 "$DB" "SELECT COUNT(*) FROM domains;" 2>/dev/null || echo 0)
+    if [[ "$zcount" -eq 0 ]]; then
+        echo "WARNING: Keine Zonen (warte auf NOTIFY vom Primary)"
+        warnings=$((warnings + 1))
+    fi
+
+    if [[ "$errors" -gt 0 ]]; then
+        echo "HEALTH: CRITICAL (${errors} errors, ${warnings} warnings)"
+        exit 2
+    elif [[ "$warnings" -gt 0 ]]; then
+        echo "HEALTH: WARNING (${warnings} warnings, ${zcount} zones, ${pcount} primaries)"
+        exit 1
+    else
+        echo "HEALTH: OK (${zcount} zones, ${pcount} primaries)"
+        exit 0
+    fi
+}
+
+cmd_stats() {
+    if ! command -v pdns_control >/dev/null 2>&1; then
+        err "pdns_control nicht gefunden"
+    fi
+    echo "============================================"
+    echo "  PowerDNS Statistiken"
+    echo "============================================"
+    pdns_control show '*' 2>/dev/null | sort
+}
+
+# --- help -----------------------------------------------------------------
+cmd_help() {
+    cat << 'HELP'
+dns-admin - Secondary DNS Management Tool
+
+VERWENDUNG:
+    dns-admin <befehl> [argumente]
+
+PRIMARY-VERWALTUNG (root):
+    primary list                                Alle konfigurierten Primaries
+    primary add <hostname> <ip> [<ip> ...]      Primary hinzufuegen (IPv4/IPv6)
+    primary remove <hostname-oder-ip>           Primary entfernen
+    primary reload                              pdns.conf regenerieren + reload
+
+ZONEN (read-only / refresh - Anlage automatisch via NOTIFY):
+    zone list                                   Zonen mit Status anzeigen
+    zone show <zone>                            Zone-Details
+    zone retrieve <zone>                        AXFR erzwingen (root)
+    zone check [<zone>]                         Zone(n) validieren
+    zone delete <zone>                          Verwaiste Zone entfernen (root)
+
+STATUS & MONITORING:
+    status                                      Vollstaendiger Server-Status
+    health                                      Health-Check (exit 0/1/2)
+    stats                                       PowerDNS-Statistiken
+
+BEISPIELE:
+    dns-admin primary add ns1.example.com 192.0.2.10 2001:db8::10
+    dns-admin primary add ns2.example.com 192.0.2.11 2001:db8::11
+    dns-admin primary remove ns1.example.com
+    dns-admin zone retrieve example.com
+    dns-admin status
+    dns-admin health
+HELP
+}
+
+# --- Dispatcher -----------------------------------------------------------
+main() {
+    local cmd="${1:-help}"
+    case "$cmd" in
+        primary)
+            shift
+            local sub="${1:-list}"
+            shift || true
+            case "$sub" in
+                list|ls)        cmd_primary_list ;;
+                add)            cmd_primary_add "$@" ;;
+                remove|rm|del)  cmd_primary_remove "$@" ;;
+                reload)         cmd_primary_reload ;;
+                *) err "Unbekannter primary-Befehl: $sub (siehe 'dns-admin help')" ;;
+            esac
+            ;;
+        zone)
+            shift
+            local sub="${1:-list}"
+            shift || true
+            case "$sub" in
+                list|ls)        cmd_zone_list ;;
+                show)           cmd_zone_show "$@" ;;
+                retrieve|fetch) cmd_zone_retrieve "$@" ;;
+                check)          cmd_zone_check "$@" ;;
+                delete|rm|del)  cmd_zone_delete "$@" ;;
+                *) err "Unbekannter zone-Befehl: $sub (siehe 'dns-admin help')" ;;
+            esac
+            ;;
+        status)         cmd_status ;;
+        health)         cmd_health ;;
+        stats)          cmd_stats ;;
+        help|-h|--help) cmd_help ;;
+        *) err "Unbekannter Befehl: $cmd (siehe 'dns-admin help')" ;;
+    esac
+}
+
+main "$@"
 EOFSCRIPT
 
-    chmod +x /usr/local/bin/dns-health-check
+    chmod +x /usr/local/bin/dns-admin
 }
 
 # =============================================================================
@@ -724,12 +1066,15 @@ create_motd() {
   Rein autoritativ - Keine Rekursion
 ============================================
 
-Befehle:
-  dns-status              - Vollständiger Status
-  dns-health-check        - Health Check für Monitoring
-  pdnsutil list-all-zones - Alle Zonen
-  pdnsutil show-zone X    - Zone Details
-  systemctl status pdns   - Service Status
+Zentrales Management-Tool: dns-admin
+
+  dns-admin status                   Server-Status
+  dns-admin health                   Health-Check (Monitoring)
+  dns-admin stats                    PowerDNS-Statistiken
+  dns-admin primary list             Primary-Server anzeigen
+  dns-admin primary add <fqdn> <ip>  Primary hinzufuegen
+  dns-admin zone list                Zonen anzeigen (Auto-Sync)
+  dns-admin help                     Vollstaendige Hilfe
 
 ============================================
 
@@ -770,18 +1115,22 @@ show_status() {
     echo ""
 
     echo "============================================"
-    echo "NÄCHSTE SCHRITTE:"
+    echo "NAECHSTE SCHRITTE:"
     echo "============================================"
     echo ""
-    echo "1. Auf dem PRIMARY DNS (Plesk/BIND):"
-    echo "   - Diesen Server als Secondary hinzufügen"
+    echo "1. Auf jedem PRIMARY DNS (Plesk/BIND):"
+    echo "   - Diesen Server als Secondary hinzufuegen"
     echo "   - NOTIFY aktivieren"
     echo ""
-    echo "2. Testen:"
-    echo "   dns-status"
-    echo "   dns-health-check"
+    echo "2. Status pruefen:"
+    echo "   dns-admin status"
+    echo "   dns-admin health"
+    echo "   dns-admin primary list"
     echo ""
-    echo "3. Zonen erscheinen automatisch nach NOTIFY vom Primary"
+    echo "3. Zonen erscheinen automatisch nach NOTIFY vom Primary."
+    echo ""
+    echo "4. Weitere Primaries spaeter hinzufuegen:"
+    echo "   dns-admin primary add ns2.example.com 192.0.2.20 2001:db8::20"
     echo ""
     echo "============================================"
 }
@@ -823,8 +1172,7 @@ main() {
     configure_fail2ban
     configure_updates
     configure_ssh
-    create_status_script
-    create_health_check
+    create_admin_tool
     create_motd
     start_services
     show_status

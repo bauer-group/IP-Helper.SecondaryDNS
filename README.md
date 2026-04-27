@@ -1,6 +1,7 @@
 # Secondary DNS Server - PowerDNS
 
-Hochverfügbarer, rein autoritativer Secondary DNS Server auf Basis von PowerDNS.
+Hochverfuegbarer, rein autoritativer Secondary DNS Server auf Basis von PowerDNS.
+Unterstuetzt **mehrere Primary-Server** mit jeweils **IPv4 und IPv6**.
 
 **Repository:** https://github.com/bauer-group/IP-Helper.SecondaryDNS
 
@@ -8,15 +9,17 @@ Hochverfügbarer, rein autoritativer Secondary DNS Server auf Basis von PowerDNS
 
 - Rein autoritativ (kein offener Resolver)
 - Automatische Zonenverwaltung via NOTIFY/AXFR
-- DNSSEC-Unterstützung
+- Mehrere Primaries parallel - jeder mit IPv4/IPv6
+- Zentrales Management-Tool: `dns-admin`
+- DNSSEC-Unterstuetzung
 - Automatische Updates (OS + PowerDNS)
-- Minimale Angriffsfläche
+- Minimale Angriffsflaeche (kein API, kein Webserver)
 
 ## Quick Start
 
 ### Option A: Cloud-Init (empfohlen)
 
-1. Parameter in `cloud-init.yaml` anpassen (ganz oben im `.env` Block)
+1. Parameter in [cloud-init.yaml](cloud-init.yaml) anpassen (im `.env` Block oben)
 2. Als User-Data bei VM-Erstellung verwenden
 3. Fertig!
 
@@ -39,8 +42,9 @@ sudo ./install.sh
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/main/install.sh | \
-  sudo PRIMARY_DNS_IP="1.2.3.4" \
-       PRIMARY_DNS_HOSTNAME="ns1.example.com" \
+  sudo PRIMARY_1_HOSTNAME="ns1.example.com" \
+       PRIMARY_1_IPV4="203.0.113.10" \
+       PRIMARY_1_IPV6="2001:db8::10" \
        ADMIN_EMAIL="admin@example.com" \
   bash
 ```
@@ -51,30 +55,29 @@ curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/
 |-------|--------------|
 | [install.sh](install.sh) | Haupt-Installationsscript |
 | [.env.example](.env.example) | Konfigurationsvorlage |
-| [cloud-init.yaml](cloud-init.yaml) | Cloud-Init für automatisches Deployment |
+| [cloud-init.yaml](cloud-init.yaml) | Cloud-Init fuer automatisches Deployment |
 | [CHECKLISTE.md](CHECKLISTE.md) | Deployment-Checkliste |
 
 ## Architektur
 
 ```
-                    INTERNET
-                        │
-                        ▼
-┌─────────────────────────────────────────┐
-│         SECONDARY DNS (PowerDNS)        │
-│                                         │
-│  • Bekannte Zone    → Autoritative      │
-│                        Antwort          │
-│                                         │
-│  • Unbekannte Zone  → REFUSED           │
-│                        (keine Rekursion)│
-└─────────────────────────────────────────┘
-                        ▲
-                        │ NOTIFY / AXFR
-                        │
-┌─────────────────────────────────────────┐
-│         PRIMARY DNS (Plesk/BIND)        │
-└─────────────────────────────────────────┘
+                           INTERNET
+                              |
+                              v
+         +-------------------------------------+
+         |     SECONDARY DNS (PowerDNS)        |
+         |                                     |
+         |  - Bekannte Zone   -> Autoritative  |
+         |                       Antwort       |
+         |  - Unbekannte Zone -> REFUSED       |
+         +-------------------------------------+
+                ^               ^               ^
+                | NOTIFY/AXFR   |               |
+                |               |               |
+       +--------+-------+ +-----+--------+ +----+--------+
+       | Primary 1      | | Primary 2    | | Primary N   |
+       | IPv4 + IPv6    | | IPv4 + IPv6  | | IPv4 + IPv6 |
+       +----------------+ +--------------+ +-------------+
 ```
 
 ## Anforderungen
@@ -82,99 +85,112 @@ curl -fsSL https://raw.githubusercontent.com/bauer-group/IP-Helper.SecondaryDNS/
 - Ubuntu 24.04 LTS oder Debian 12
 - **Minimal:** 1 vCPU, 1 GB RAM, 10 GB SSD
 - **Empfohlen:** 2 vCPU, 2 GB RAM, 10 GB SSD
-- Offene Ports: 22 (SSH), 53 (DNS)
+- Offene Ports: 22 (SSH), 53 (DNS, TCP+UDP, IPv4+IPv6)
+
+## Konfiguration mehrerer Primaries
+
+Im `.env` (oder im Cloud-Init `.env`-Block):
+
+```bash
+# Pflicht: mindestens ein Primary mit Hostname und einer IP
+PRIMARY_1_HOSTNAME="ns1.example.com"
+PRIMARY_1_IPV4="203.0.113.10"
+PRIMARY_1_IPV6="2001:db8::10"
+
+# Optional: weitere Primaries
+PRIMARY_2_HOSTNAME="ns2.example.com"
+PRIMARY_2_IPV4="203.0.113.11"
+PRIMARY_2_IPV6="2001:db8::11"
+```
+
+Zur Laufzeit aenderbar via `dns-admin` - kein Re-Install noetig.
+
+## Zentrales Management: `dns-admin`
+
+Nach der Installation steht das `dns-admin` Tool zur Verfuegung. Es ist die
+**einzige** Anlaufstelle fuer Verwaltung, Status und Monitoring.
+
+### Primary-Server verwalten
+
+```bash
+dns-admin primary list                                # Alle Primaries
+dns-admin primary add ns3.example.com 192.0.2.30 2001:db8::30   # Hinzufuegen
+dns-admin primary remove ns3.example.com              # Entfernen (alle IPs)
+dns-admin primary remove 192.0.2.30                   # Einzelne IP entfernen
+dns-admin primary reload                              # pdns.conf regenerieren
+```
+
+Add/Remove laden die PowerDNS-Konfiguration automatisch neu.
+
+### Zonen (read-only / refresh)
+
+Zonen werden **automatisch** vom Primary uebernommen, sobald dieser einen NOTIFY
+sendet. Dieses Tool legt **keine** Zonen manuell an.
+
+```bash
+dns-admin zone list                          # Zonen mit Status
+dns-admin zone show example.com              # Details
+dns-admin zone retrieve example.com          # AXFR erzwingen
+dns-admin zone check                         # Alle Zonen validieren
+dns-admin zone delete example.com            # Verwaiste Zone entfernen
+```
+
+### Status, Health, Statistiken
+
+```bash
+dns-admin status      # Vollstaendiger Server-Status
+dns-admin health      # Health-Check fuer Monitoring (exit 0/1/2)
+dns-admin stats       # PowerDNS-Statistiken
+dns-admin help        # Vollstaendige Hilfe
+```
 
 ## Nach der Installation
 
-Zonen werden **automatisch** vom Primary übernommen:
+1. Auf jedem Primary DNS:
+   - Diesen Server als Slave/Secondary eintragen
+   - NOTIFY aktivieren
 
-1. Zone auf Primary anlegen
-2. NOTIFY wird gesendet
-3. Secondary lädt Zone via AXFR
-4. Fertig!
+2. Status pruefen:
+
+   ```bash
+   dns-admin status
+   dns-admin primary list
+   dns-admin zone list
+   ```
+
+3. Bei Bedarf einen weiteren Primary nachtraeglich hinzufuegen:
+
+   ```bash
+   sudo dns-admin primary add ns4.example.com 192.0.2.40 2001:db8::40
+   ```
+
+## Troubleshooting
 
 ```bash
-# Status prüfen
-pdnsutil list-all-zones
+# Service-Status
 systemctl status pdns
-```
+journalctl -u pdns -f
 
-## Befehle & Monitoring
+# Health-Check (gut fuer Monitoring-Tools)
+dns-admin health
 
-### Status & Übersicht
+# DNS-Tests
+dig @localhost example.com A          # Autoritative Antwort
+dig @localhost google.com A           # Sollte REFUSED liefern
+dig @localhost example.com AXFR       # Zone-Transfer testen
 
-```bash
-# Installierte Helper-Scripts
-dns-status                    # Vollständiger Server-Status
-dns-health-check              # Health-Check für Monitoring
-
-# PowerDNS Service
-systemctl status pdns         # Service-Status
-journalctl -u pdns -f         # Live-Logs
-```
-
-### Zonen-Verwaltung
-
-```bash
-# Zonen anzeigen
-pdnsutil list-all-zones                 # Alle Zonen auflisten
-pdnsutil show-zone example.com          # Zone-Details anzeigen
-pdnsutil list-zone example.com          # Alle Records einer Zone
-
-# Zone manuell abrufen (bei Problemen)
-pdnsutil retrieve-zone example.com      # Zone neu vom Primary holen
-```
-
-### Performance & Statistiken
-
-```bash
-# Live-Statistiken
-pdns_control show '*'                   # Alle Statistiken
-pdns_control show queries               # Anzahl Queries gesamt
-pdns_control show qsize-q               # Warteschlange
-pdns_control show packetcache-hit       # Cache-Treffer
-pdns_control show packetcache-miss      # Cache-Misses
-
-# Top-Statistiken
-pdns_control show uptime                # Laufzeit
-pdns_control show latency               # Durchschnittliche Latenz
-```
-
-### DNS-Tests
-
-```bash
-# Lokale Abfragen
-dig @localhost example.com A            # A-Record abfragen
-dig @localhost example.com ANY          # Alle Records
-dig @localhost example.com AXFR         # Zone-Transfer testen
-
-# Authoritative vs. Recursive Test
-dig @localhost google.com A             # Sollte REFUSED liefern (gut!)
-dig @localhost example.com A +short     # Nur IP-Adresse
-```
-
-### Troubleshooting
-
-```bash
-# Konfiguration prüfen
-pdns_control rping                      # PowerDNS erreichbar?
-pdnsutil check-all-zones                # Alle Zonen auf Fehler prüfen
-
-# Netzwerk
-ss -ulnp | grep :53                     # Port 53 UDP
-ss -tlnp | grep :53                     # Port 53 TCP
-ufw status                              # Firewall-Regeln
-```
-
-## Hilfe
-
-```bash
-dns-status        # Vollständiger Server-Status
-dns-health-check  # Health-Check für Monitoring
+# Primary-Konfiguration falsch?
+dns-admin primary list                # IPs/Hostnamen pruefen
+dns-admin primary reload              # pdns.conf aus DB neu erzeugen
 ```
 
 ## Optional: Web-Interface
 
-Für eine grafische Verwaltungsoberfläche kann [PowerDNS-Admin](https://github.com/PowerDNS-Admin/PowerDNS-Admin) separat installiert werden.
+Fuer eine grafische Verwaltungsoberflaeche kann
+[PowerDNS-Admin](https://github.com/PowerDNS-Admin/PowerDNS-Admin) separat
+installiert werden. Dafuer muss die HTTP-API in `/etc/powerdns/pdns.conf`
+zusaetzlich aktiviert werden (default: aus).
 
-> **Hinweis:** Für diesen Secondary DNS ist keine Weboberfläche erforderlich, da alle Zonen automatisch vom Primary synchronisiert werden.
+> **Hinweis:** Fuer den reinen Secondary-Betrieb nicht erforderlich -
+> alle Zonen kommen automatisch vom Primary und alle Verwaltungsaufgaben
+> deckt `dns-admin` ab.
