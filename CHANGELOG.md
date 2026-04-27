@@ -1,3 +1,9 @@
+## [1.1.2](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.1.1...v1.1.2) (2026-04-27)
+
+### 🐛 Bug Fixes
+
+* **pdns:** entfernte Recursor-only Setting 'max-qps-per-ip' aus pdns.conf ([447004d](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/447004d2c3c32259849e1b2ffb528e99ed02a877))
+
 ## [1.1.1](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.1.0...v1.1.1) (2026-04-27)
 
 ### 🐛 Bug Fixes
