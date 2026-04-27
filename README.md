@@ -188,6 +188,31 @@ dns-admin primary list                # IPs/Hostnamen pruefen
 dns-admin primary reload              # pdns.conf aus DB neu erzeugen
 ```
 
+## Sicherheit / Bruteforce-Schutz
+
+Der Installer richtet zwei fail2ban-Jails ein:
+
+- **sshd**: 24h Ban nach 5 Fehlversuchen in 15 Minuten
+- **recidive**: 1 Woche Ban fuer IPs, die innerhalb von 24h dreimal von einem
+  Jail gebannt wurden (eskalierende Strafe gegen hartnaeckige Bots)
+
+```bash
+# Status / Banlist
+sudo fail2ban-client status               # Aktive Jails
+sudo fail2ban-client status sshd          # SSH-Banlist
+sudo fail2ban-client status recidive      # Wiederholungstaeter
+
+# IP entbannen (nuetzlich nach eigenem Tippfehler)
+sudo fail2ban-client set sshd unbanip 1.2.3.4
+
+# Aktive Bans im dns-admin status sehen
+dns-admin status
+```
+
+Die globale Aktivitaet (Anzahl gebannter IPs) wird auch in `dns-admin status`
+unter "--- Sicherheit ---" angezeigt; `dns-admin health` warnt, wenn fail2ban
+nicht laeuft.
+
 ## Optional: Web-Interface
 
 Fuer eine grafische Verwaltungsoberflaeche kann

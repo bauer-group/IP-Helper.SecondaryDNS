@@ -548,19 +548,30 @@ configure_firewall() {
 configure_fail2ban() {
     log_step "Konfiguriere Fail2ban..."
 
-    cat > /etc/fail2ban/jail.local << 'EOF'
-[DEFAULT]
-bantime = 3600
-findtime = 600
-maxretry = 3
+    # Migration: alte monolithische jail.local entfernen, jail.d/ ist Konvention
+    [[ -f /etc/fail2ban/jail.local ]] && rm /etc/fail2ban/jail.local
 
+    # SSH-Jail (Hauptangriffsvektor)
+    # bantime 24h, findtime 15min, maxretry 5 - haerterer Ban bei toleranteren
+    # Versuchen, das gleicht Tippfehler beim Login aus.
+    cat > /etc/fail2ban/jail.d/01-sshd.conf << 'EOF'
 [sshd]
 enabled = true
-port = ssh
-filter = sshd
-logpath = /var/log/auth.log
+
+bantime = 86400
+findtime = 900
+maxretry = 5
+EOF
+
+    # Recidive: bannt IPs, die bereits mehrfach gebannt wurden, fuer 1 Woche.
+    # Eskalierende Strafe gegen hartnaeckige Bruteforce-Bots.
+    cat > /etc/fail2ban/jail.d/99-recidive.conf << 'EOF'
+[recidive]
+enabled = true
+
+bantime = 604800
+findtime = 86400
 maxretry = 3
-bantime = 3600
 EOF
 
     systemctl enable fail2ban
@@ -929,6 +940,23 @@ cmd_status() {
     fi
 
     echo ""
+    echo "--- Sicherheit ---"
+    if systemctl is-active fail2ban >/dev/null 2>&1; then
+        local jails banned_total=0 jail
+        jails=$(fail2ban-client status 2>/dev/null | awk -F':' '/Jail list/ {gsub(/[ \t]+/, "", $2); print $2}' | tr ',' ' ')
+        if [[ -n "$jails" ]]; then
+            for jail in $jails; do
+                local n
+                n=$(fail2ban-client status "$jail" 2>/dev/null | awk -F':' '/Currently banned/ {gsub(/[ \t]+/, "", $2); print $2}')
+                [[ -n "$n" ]] && banned_total=$((banned_total + n)) && echo "  fail2ban [$jail]: ${n} aktive Bans"
+            done
+        fi
+        echo "  fail2ban Total: ${banned_total} aktive Bans"
+    else
+        echo "  fail2ban: NICHT AKTIV"
+    fi
+
+    echo ""
     echo "--- System ---"
     echo "  Disk:   $(df -h /var/lib/powerdns 2>/dev/null | tail -1 | awk '{print $3 " / " $2 " (" $5 ")"}')"
     echo "  Memory: $(free -h | awk '/^Mem:/ {print $3 " / " $2}')"
@@ -963,6 +991,11 @@ cmd_health() {
 
     if ! systemctl is-active chrony >/dev/null 2>&1; then
         echo "WARNING: Chrony ist nicht aktiv (Zeitsynchronisation)"
+        warnings=$((warnings + 1))
+    fi
+
+    if ! systemctl is-active fail2ban >/dev/null 2>&1; then
+        echo "WARNING: fail2ban ist nicht aktiv (Bruteforce-Schutz fehlt)"
         warnings=$((warnings + 1))
     fi
 
