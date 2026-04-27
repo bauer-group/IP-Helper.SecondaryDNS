@@ -654,8 +654,13 @@ EOF
         log_error "Kein SSH-Service gefunden (weder ssh.service noch sshd.service)"
         exit 1
     fi
-    log_info "Starte SSH-Service ($ssh_unit) neu..."
-    systemctl restart "$ssh_unit"
+
+    # WICHTIG: reload (SIGHUP) statt restart - Installer laeuft typischerweise
+    # ueber genau diese SSH-Session. restart wuerde Master-Daemon killen und
+    # uns aus dem Skript-Lauf werfen. reload liest nur die Config neu, ohne
+    # bestehende Sessions zu beruehren.
+    log_info "Lade SSH-Config neu via SIGHUP ($ssh_unit reload)..."
+    systemctl reload "$ssh_unit"
 }
 
 # =============================================================================
