@@ -451,8 +451,8 @@ allow-axfr-ips=127.0.0.1,::1,${ALLOWED_IPS}
 allow-notify-from=127.0.0.1,::1,${ALLOWED_IPS}
 # END PRIMARY-IPS
 
-# DNSSEC
-dnssec=process-no-validate
+# DNSSEC: signierte Zonen werden automatisch verarbeitet (KEY/RRSIG/NSEC)
+# Das alte 'dnssec' Setting wurde in PowerDNS Auth 4.6+ entfernt.
 
 # Performance (receiver-threads = Anzahl CPU-Kerne)
 receiver-threads=${CPU_CORES}
@@ -1147,8 +1147,23 @@ start_services() {
     log_step "Starte Dienste..."
 
     systemctl enable pdns
-    systemctl restart pdns
+
+    # Bei ungueltiger Config schlaegt restart fehl - sofortige klare Diagnose
+    # statt systemd-Restart-Loop, der erst im Journal sichtbar wird.
+    if ! systemctl restart pdns; then
+        log_error "PowerDNS startet nicht - Konfigurationsfehler vermutet."
+        log_error "Letzte 20 Zeilen aus dem Journal:"
+        journalctl -u pdns --no-pager -n 20
+        exit 1
+    fi
+
     sleep 2
+
+    if ! systemctl is-active pdns >/dev/null 2>&1; then
+        log_error "PowerDNS ist nach restart nicht aktiv. Letzte 20 Zeilen aus dem Journal:"
+        journalctl -u pdns --no-pager -n 20
+        exit 1
+    fi
 }
 
 # =============================================================================
