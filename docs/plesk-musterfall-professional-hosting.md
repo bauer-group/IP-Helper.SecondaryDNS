@@ -2,7 +2,9 @@
 
 Eigenstaendige Anleitung fuer die Aufnahme **eines** konkreten Plesk-
 Primary in eine laufende Secondary-Infrastruktur. Die zugrundeliegende
-NOTIFY/AXFR-Mechanik beschreibt [PRIMARY-SETUP.md](../PRIMARY-SETUP.md);
+NOTIFY/AXFR-Mechanik beschreibt [PRIMARY-SETUP.md](../PRIMARY-SETUP.md),
+die konzeptionelle Gesamtsicht (Rollen, Basis-Zone, Resilienz)
+[zonenkonzept-professional-hosting.md](zonenkonzept-professional-hosting.md);
 dieses Doc ist ohne Querverweise vollstaendig durchfuehrbar.
 
 > **Geltungsbereich:** Operativer Standard-Vorgang "neuer Plesk-Primary
