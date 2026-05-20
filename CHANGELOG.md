@@ -1,3 +1,9 @@
+## [1.3.3](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.3.2...v1.3.3) (2026-05-20)
+
+### 🐛 Bug Fixes
+
+* **dns-admin:** fixed broken zone retrieve via pdns_control ([8fef9a4](https://github.com/bauer-group/IP-Helper.SecondaryDNS/commit/8fef9a426c42ddaed2b7c58667c0aa2ce5be2faa))
+
 ## [1.3.2](https://github.com/bauer-group/IP-Helper.SecondaryDNS/compare/v1.3.1...v1.3.2) (2026-04-27)
 
 ### 🐛 Bug Fixes
