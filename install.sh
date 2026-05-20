@@ -940,7 +940,10 @@ cmd_zone_retrieve() {
     need_root
     local zone="${1:-}"
     [[ -z "$zone" ]] && err "Verwendung: dns-admin zone retrieve <zone>"
-    pdnsutil retrieve-zone "$zone"
+    # pdns_control retrieve = laufzeit-Trigger fuer AXFR vom Primary.
+    # pdnsutil retrieve-zone existiert nicht; AXFR ist eine Daemon-,
+    # keine DB-Operation und gehoert daher in pdns_control.
+    pdns_control retrieve "$zone"
 }
 
 cmd_zone_check() {
